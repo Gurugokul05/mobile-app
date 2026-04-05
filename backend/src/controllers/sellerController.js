@@ -13,10 +13,18 @@ exports.uploadVerificationDocs = async (req, res) => {
       return res.status(400).json({ message: "User is not a seller" });
     }
 
-    if (!req.files) {
+    if (
+      !req.files ||
+      !req.files.idProof?.length ||
+      !req.files.locationProof?.length ||
+      !req.files.makingProof?.length
+    ) {
       return res
         .status(400)
-        .json({ message: "Please upload all required files" });
+        .json({
+          message:
+            "Please upload all required files (ID, location, and making proof)",
+        });
     }
 
     user.verificationDocs = {

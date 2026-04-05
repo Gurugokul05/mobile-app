@@ -42,11 +42,18 @@ const storage =
       });
 
 const fileFilter = (_req, file, cb) => {
-  if (file?.mimetype?.startsWith("image/")) {
+  const mimeType = String(file?.mimetype || "").toLowerCase();
+  const fieldName = String(file?.fieldname || "");
+
+  const isImage = mimeType.startsWith("image/");
+  const isMakingProofVideo =
+    fieldName === "makingProof" && mimeType.startsWith("video/");
+
+  if (isImage || isMakingProofVideo) {
     cb(null, true);
     return;
   }
-  cb(new Error("Only image uploads are allowed"));
+  cb(new Error("Only images are allowed (making proof can be video)"));
 };
 
 const upload = multer({
