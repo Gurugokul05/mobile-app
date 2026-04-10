@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Roots",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/Roots logo.png",
+    "userInterfaceStyle": "light",
+    "statusBar": {
+      "barStyle": "dark-content",
+      "translucent": true,
+      "backgroundColor": "transparent"
+    },
+    "splash": {
+      "image": "./assets/Roots logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/Roots logo.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/Roots logo.png"
+      },
+      "package": "com.anonymous.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
