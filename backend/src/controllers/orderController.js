@@ -18,6 +18,10 @@ try {
 // @access  Private
 exports.createOrder = async (req, res) => {
   try {
+    if (req.user.role !== "buyer") {
+      return res.status(403).json({ message: "Only buyers can create orders" });
+    }
+
     const { productId, quantity, shippingAddress } = req.body;
 
     const product = await Product.findById(productId);
@@ -168,7 +172,7 @@ exports.getOrderById = async (req, res) => {
       order.sellerId._id.toString() !== req.user._id.toString()
     ) {
       return res
-        .status(401)
+        .status(403)
         .json({ message: "Not authorized to view this order" });
     }
 
@@ -186,8 +190,11 @@ exports.uploadPackingProof = async (req, res) => {
     const order = await Order.findById(req.params.id);
 
     if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.sellerId.toString() !== req.user._id.toString())
-      return res.status(401).json({ message: "Not authorized" });
+    if (
+      req.user.role !== "seller" ||
+      order.sellerId.toString() !== req.user._id.toString()
+    )
+      return res.status(403).json({ message: "Not authorized" });
 
     if (!req.file)
       return res

@@ -24,10 +24,20 @@ const storage =
   cloudinaryEnabled && hasCloudinaryConfig
     ? new CloudinaryStorage({
         cloudinary,
-        params: {
-          folder: "roots_uploads",
-          allowed_formats: ["jpg", "jpeg", "png", "webp"],
-          resource_type: "image",
+        params: async (_req, file) => {
+          const fieldName = String(file?.fieldname || "");
+          const isVideoField =
+            fieldName === "makingProof" || fieldName === "unboxingVideo";
+
+          return {
+            folder: isVideoField
+              ? "roots_uploads/making_proofs"
+              : "roots_uploads/images",
+            resource_type: isVideoField ? "video" : "image",
+            allowed_formats: isVideoField
+              ? ["mp4", "mov", "avi", "mkv", "webm"]
+              : ["jpg", "jpeg", "png", "webp"],
+          };
         },
       })
     : multer.diskStorage({
@@ -46,14 +56,19 @@ const fileFilter = (_req, file, cb) => {
   const fieldName = String(file?.fieldname || "");
 
   const isImage = mimeType.startsWith("image/");
-  const isMakingProofVideo =
-    fieldName === "makingProof" && mimeType.startsWith("video/");
+  const isVideoForAllowedField =
+    (fieldName === "makingProof" || fieldName === "unboxingVideo") &&
+    mimeType.startsWith("video/");
 
-  if (isImage || isMakingProofVideo) {
+  if (isImage || isVideoForAllowedField) {
     cb(null, true);
     return;
   }
-  cb(new Error("Only images are allowed (making proof can be video)"));
+  cb(
+    new Error(
+      "Only images are allowed (making proof and unboxing video can be video)",
+    ),
+  );
 };
 
 const upload = multer({
@@ -61,7 +76,7 @@ const upload = multer({
   fileFilter,
   limits: {
     files: 5,
-    fileSize: 8 * 1024 * 1024,
+    fileSize: 50 * 1024 * 1024,
   },
 });
 

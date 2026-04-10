@@ -2,7 +2,7 @@
 
 > **Buy Button & All Features Working! ✅**
 
-A full-stack mobile marketplace for discovering and purchasing authentic local products from verified sellers across India.
+A full-stack mobile MARKETPLACE for discovering and purchasing authentic local products from verified sellers across India.
 
 ---
 
@@ -36,7 +36,7 @@ cd mobile && npm install && npm start
 
 ## 📱 Screenshots & Features
 
-### Buyer Features
+### BUYER Features
 
 - 🏠 Browse 18+ authentic products
 - 🔍 Filter by region/place
@@ -47,7 +47,7 @@ cd mobile && npm install && npm start
 - 🔄 Request refunds with proof
 - 👤 Profile & order history
 
-### Seller Features
+### SELLER Features
 
 - 📤 Upload products with images
 - 📊 Dashboard with analytics
@@ -55,7 +55,7 @@ cd mobile && npm install && npm start
 - ✅ Mark items as packed
 - 🎯 Get verified & build trust
 
-### Admin Features
+### ADMIN Features
 
 - ✔️ Approve/reject sellers
 - 🔍 Review refund requests
@@ -118,9 +118,9 @@ final mobile/
 │   ├── server.js           # Entry point
 │   └── package.json
 │
-├── mobile/                  # React Native Expo app
+├── mobile/                  # React Native Expo APP
 │   ├── src/
-│   │   ├── screens/        # All app screens
+│   │   ├── screens/        # All APP screens
 │   │   ├── components/     # Reusable components
 │   │   ├── context/        # State management
 │   │   ├── api/            # API integration
@@ -292,7 +292,7 @@ eas build
 
 ### "Token failed error"
 
-✅ Clear app data and login again
+✅ Clear APP data and login again
 
 ---
 
@@ -342,7 +342,7 @@ cd mobile && npm start
 # 4. Try the buy button! ✅
 ```
 
-**The app is fully functional and ready for production! 🚀**
+**The APP is fully functional and ready for production! 🚀**
 
 ---
 

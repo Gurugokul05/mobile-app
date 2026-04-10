@@ -4,17 +4,47 @@ const {
   getProducts,
   getProductById,
   createProduct,
+  updateProduct,
   addProductReview,
 } = require("../controllers/productController");
-const { protect, adminOrSeller } = require("../middlewares/auth");
+const { protect, adminOrSeller, seller } = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
+const {
+  validateObjectIdParam,
+  validateProductCreateRequest,
+  validateProductUpdateRequest,
+  validateReviewRequest,
+} = require("../middlewares/validators");
 
 router
   .route("/")
   .get(getProducts)
-  .post(protect, adminOrSeller, upload.array("images", 5), createProduct);
+  .post(
+    protect,
+    seller,
+    upload.array("images", 5),
+    validateProductCreateRequest,
+    createProduct,
+  );
 
-router.route("/:id").get(getProductById);
-router.route("/:id/reviews").post(protect, addProductReview);
+router
+  .route("/:id")
+  .get(getProductById)
+  .put(
+    protect,
+    adminOrSeller,
+    validateObjectIdParam("id"),
+    upload.array("images", 5),
+    validateProductUpdateRequest,
+    updateProduct,
+  );
+router
+  .route("/:id/reviews")
+  .post(
+    protect,
+    validateObjectIdParam("id"),
+    validateReviewRequest,
+    addProductReview,
+  );
 
 module.exports = router;

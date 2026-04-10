@@ -13,7 +13,13 @@ const protect = async (req, res, next) => {
         token,
         process.env.JWT_SECRET || "your_jwt_secret",
       );
-      req.user = await User.findById(decoded.id).select("-password");
+      const user = await User.findById(decoded.id).select("-password");
+      if (!user) {
+        return res
+          .status(401)
+          .json({ message: "Not authorized, user not found" });
+      }
+      req.user = user;
       next();
       return;
     } catch (error) {
@@ -24,20 +30,24 @@ const protect = async (req, res, next) => {
   res.status(401).json({ message: "Not authorized, no token" });
 };
 
-const adminOrSeller = (req, res, next) => {
-  if (req.user && (req.user.role === "admin" || req.user.role === "seller")) {
-    next();
-  } else {
-    res.status(401).json({ message: "Not authorized as admin or seller" });
-  }
-};
+const authorize =
+  (...roles) =>
+  (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Not authorized" });
+    }
 
-const admin = (req, res, next) => {
-  if (req.user && req.user.role === "admin") {
-    next();
-  } else {
-    res.status(401).json({ message: "Not authorized as admin" });
-  }
-};
+    if (roles.includes(req.user.role)) {
+      next();
+      return;
+    }
 
-module.exports = { protect, adminOrSeller, admin };
+    res.status(403).json({ message: "Forbidden: insufficient role" });
+  };
+
+const admin = authorize("admin");
+const seller = authorize("seller");
+const buyer = authorize("buyer");
+const adminOrSeller = authorize("admin", "seller");
+
+module.exports = { protect, authorize, adminOrSeller, admin, seller, buyer };
