@@ -48,11 +48,7 @@ const ProductCard = ({ product, large = false, cta = false }) => (
           <div className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-[var(--roots-brown)]">
             {product.category}
           </div>
-          <div className="absolute inset-0 flex items-center justify-center bg-[rgba(14,12,10,0.0)] opacity-0 transition duration-500 group-hover:bg-[rgba(14,12,10,0.28)] group-hover:opacity-100">
-            <div className="rounded-full border border-white/40 bg-white/90 px-5 py-3 text-sm font-semibold text-[var(--roots-black)] shadow-[0_10px_30px_rgba(0,0,0,0.12)]">
-              View Product →
-            </div>
-          </div>
+          <div className="absolute inset-0 flex items-center justify-center bg-[rgba(14,12,10,0.0)] opacity-0 transition duration-500 group-hover:bg-[rgba(14,12,10,0.28)] group-hover:opacity-100"></div>
         </div>
 
         <div className="p-5">

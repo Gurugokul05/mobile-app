@@ -1,6 +1,42 @@
 import React from "react";
 import { Instagram, Linkedin, Twitter } from "lucide-react";
+import { Link } from "react-router-dom";
 import { footerColumns } from "../data";
+
+const supportEmail = "support.roots.app@gmail.com";
+
+const renderFooterLink = (item) => {
+  if (item === "Privacy Policy") {
+    return (
+      <Link
+        to="/privacy-policy"
+        className="inline-flex transition duration-200 hover:translate-x-1 hover:text-[var(--roots-ivory)]"
+      >
+        {item}
+      </Link>
+    );
+  }
+
+  if (item === "Contact") {
+    return (
+      <a
+        href={`mailto:${supportEmail}`}
+        className="inline-flex transition duration-200 hover:translate-x-1 hover:text-[var(--roots-ivory)]"
+      >
+        {item}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href="#home"
+      className="inline-flex transition duration-200 hover:translate-x-1 hover:text-[var(--roots-ivory)]"
+    >
+      {item}
+    </a>
+  );
+};
 
 const FooterGroup = ({ title, items }) => (
   <div>
@@ -9,14 +45,7 @@ const FooterGroup = ({ title, items }) => (
     </div>
     <ul className="mt-5 space-y-3 text-sm text-[var(--roots-ivory)]/72">
       {items.map((item) => (
-        <li key={item}>
-          <a
-            href="#home"
-            className="inline-flex transition duration-200 hover:translate-x-1 hover:text-[var(--roots-ivory)]"
-          >
-            {item}
-          </a>
-        </li>
+        <li key={item}>{renderFooterLink(item)}</li>
       ))}
     </ul>
   </div>
@@ -49,6 +78,21 @@ const Footer = () => {
             A premium Indian marketplace for artisan sellers, conscious buyers,
             and the governance layer that keeps everything honest.
           </p>
+          <div className="mt-5 rounded-2xl border border-[rgba(200,134,42,0.16)] bg-white/[0.04] p-4 text-sm leading-7 text-[var(--roots-ivory)]/82">
+            <div className="label-caps text-[11px] font-medium text-[var(--roots-gold)]">
+              Support
+            </div>
+            <p className="mt-2">
+              Questions, privacy requests, or order help? Write to{" "}
+              <a
+                href={`mailto:${supportEmail}`}
+                className="font-semibold text-[var(--roots-gold-lt)] underline decoration-[rgba(228,185,106,0.35)] underline-offset-4 transition hover:text-[var(--roots-gold)]"
+              >
+                {supportEmail}
+              </a>
+              .
+            </p>
+          </div>
           <div className="mt-6 flex items-center gap-3 text-[var(--roots-ivory)]/78">
             {[
               [Instagram, "Instagram"],
@@ -85,22 +129,22 @@ const Footer = () => {
 
       <div className="border-t border-[rgba(200,134,42,0.16)] px-4 py-4 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 text-xs text-[var(--roots-ivory)]/60 md:flex-row md:items-center md:justify-between">
-          <span>© 2025 ROOTS Marketplace</span>
+          <span>© 2026 ROOTS Marketplace</span>
           <span className="flex gap-4">
-            <a
-              href="#home"
+            <Link
+              to="/privacy-policy"
               className="transition hover:text-[var(--roots-ivory)]"
             >
               Privacy
-            </a>
-            <a
-              href="#home"
+            </Link>
+            <Link
+              to="/terms"
               className="transition hover:text-[var(--roots-ivory)]"
             >
               Terms
-            </a>
+            </Link>
             <a
-              href="#home"
+              href={`mailto:${supportEmail}`}
               className="transition hover:text-[var(--roots-ivory)]"
             >
               Contact

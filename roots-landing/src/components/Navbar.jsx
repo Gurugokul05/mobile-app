@@ -2,25 +2,37 @@ import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { navLinks } from "../data";
+import rootsLogo from "../assets/Roots logo.png";
 
-const WaxSeal = () => (
-  <svg viewBox="0 0 40 40" className="h-8 w-8 text-[var(--roots-gold)]">
-    <circle
-      cx="20"
-      cy="20"
-      r="18"
+const RootsMark = ({ className = "h-8 w-8" }) => (
+  <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+    <path
+      d="M32 8 14 40h10l8-14 8 14h10L32 8Z"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     />
     <path
-      d="M20 9c-3.8 4.3-7.8 8-7.8 12.1A7.8 7.8 0 0 0 20 29c4.3 0 7.8-3.5 7.8-7.8C27.8 17 23.7 13.2 20 9Z"
+      d="M32 24 24 38h16l-8-14Z"
       fill="currentColor"
-      opacity="0.18"
+      opacity="0.22"
     />
     <path
-      d="M20 12.2c-2.2 2.4-4.5 4.6-4.5 7.5A4.5 4.5 0 0 0 20 24.2a4.5 4.5 0 0 0 4.5-4.5c0-2.9-2.3-5.1-4.5-7.5Z"
-      fill="currentColor"
+      d="M32 40v16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M26 50c2-3 4-5 6-5s4 2 6 5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     />
   </svg>
 );
@@ -52,18 +64,25 @@ const Navbar = () => {
       transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
       className={`fixed inset-x-0 top-0 z-[60] transition-all duration-300 ${
         scrolled
-          ? "border-b border-[rgba(200,134,42,0.18)] bg-[rgba(14,12,10,0.85)] backdrop-blur-[20px]"
+          ? "border-b border-[rgba(200,134,42,0.18)] bg-[rgba(250,246,238,0.88)] backdrop-blur-[20px]"
           : "border-b border-transparent bg-transparent"
       }`}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <a href="#home" className="group inline-flex items-center gap-2">
-          <span className="font-display text-[1.65rem] tracking-[0.18em] text-[var(--roots-ivory)]">
-            ROTS
-          </span>
-          <WaxSeal />
-          <span className="font-display text-[1.65rem] tracking-[0.18em] text-[var(--roots-ivory)]">
-            S
+          <img
+            src={rootsLogo}
+            alt="Roots logo"
+            className="h-8 w-8 rounded-full object-cover"
+          />
+          <span
+            className={`font-display text-[1.65rem] tracking-[0.18em] transition-colors duration-300 ${
+              scrolled
+                ? "text-[var(--roots-brown)]"
+                : "text-[var(--roots-ivory)]"
+            }`}
+          >
+            ROOTS
           </span>
         </a>
 
@@ -72,7 +91,11 @@ const Navbar = () => {
             <a
               key={link.label}
               href={link.href}
-              className="nav-link label-caps relative text-[14px] font-medium text-[var(--roots-ivory)]/85 transition hover:text-[var(--roots-gold)]"
+              className={`nav-link label-caps relative text-[14px] font-medium transition hover:text-[var(--roots-gold)] ${
+                scrolled
+                  ? "text-[var(--roots-brown)]/82"
+                  : "text-[var(--roots-ivory)]/85"
+              }`}
               style={{ letterSpacing: "0.15em" }}
             >
               <span>{link.label}</span>
@@ -104,16 +127,23 @@ const Navbar = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] bg-[rgba(14,12,10,0.98)] px-6 py-6 md:hidden"
+            className="fixed inset-0 z-[70] bg-[rgba(250,246,238,0.98)] px-6 py-6 md:hidden"
           >
             <div className="flex items-center justify-between">
-              <span className="font-display text-3xl tracking-[0.18em] text-[var(--roots-ivory)]">
-                ROOTS
-              </span>
+              <div className="flex items-center gap-3">
+                <img
+                  src={rootsLogo}
+                  alt="Roots logo"
+                  className="h-9 w-9 rounded-full object-cover"
+                />
+                <span className="font-display text-3xl tracking-[0.18em] text-[var(--roots-brown)]">
+                  ROOTS
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-[rgba(228,185,106,0.2)] p-3 text-[var(--roots-ivory)]"
+                className="rounded-full border border-[rgba(200,134,42,0.2)] p-3 text-[var(--roots-brown)]"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -141,7 +171,7 @@ const Navbar = () => {
                   variants={linkVariants}
                   custom={index}
                   onClick={() => setOpen(false)}
-                  className="label-caps border-b border-[rgba(245,237,216,0.08)] pb-4 text-2xl text-[var(--roots-ivory)]/90"
+                  className="label-caps border-b border-[rgba(99,73,43,0.12)] pb-4 text-2xl text-[var(--roots-brown)]/90"
                   style={{ letterSpacing: "0.16em" }}
                 >
                   {link.label}

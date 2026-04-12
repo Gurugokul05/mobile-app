@@ -3,7 +3,6 @@ export const navLinks = [
   { label: "Marketplace", href: "#marketplace" },
   { label: "How It Works", href: "#how-it-works" },
   { label: "For Sellers", href: "#seller-spotlight" },
-  { label: "Login", href: "#footer" },
 ];
 
 export const stats = [
@@ -340,5 +339,5 @@ export const pageSections = [
 export const footerColumns = {
   marketplace: ["Browse", "Categories", "New Arrivals", "Deals"],
   seller: ["Register", "Dashboard", "Trust Score", "Support"],
-  company: ["About", "Blog", "Privacy Policy", "Contact"],
+  company: ["About", "Privacy Policy", "Contact"],
 };
