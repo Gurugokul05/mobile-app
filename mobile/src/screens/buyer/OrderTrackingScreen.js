@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../theme/colors";
@@ -15,6 +16,14 @@ import api from "../../api/config";
 import { useAppAlert } from "../../context/AlertContext";
 import { useAuth } from "../../context/AuthContext";
 import ScreenSurface from "../../components/ScreenSurface";
+
+const ORDER_STAGES = ["Pending", "Accepted", "Packed", "Shipped", "Delivered"];
+
+const normalizeOrderStatus = (status) => {
+  if (status === "Ordered") return "Pending";
+  if (status === "Cancelled") return "Rejected";
+  return status || "Pending";
+};
 
 const OrderTrackingScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -55,14 +64,20 @@ const OrderTrackingScreen = ({ navigation }) => {
   };
 
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
+    const normalized = normalizeOrderStatus(status).toLowerCase();
+
+    switch (normalized) {
       case "delivered":
         return colors.success;
       case "shipped":
         return colors.primary;
       case "packed":
         return colors.warning;
-      case "ordered":
+      case "accepted":
+        return "#1D4ED8";
+      case "rejected":
+        return colors.error;
+      case "pending":
         return colors.textSecondary;
       default:
         return colors.textSecondary;
@@ -70,75 +85,168 @@ const OrderTrackingScreen = ({ navigation }) => {
   };
 
   const getStatusIcon = (status) => {
-    switch (status?.toLowerCase()) {
+    const normalized = normalizeOrderStatus(status).toLowerCase();
+
+    switch (normalized) {
       case "delivered":
         return "checkmark-done-circle";
       case "shipped":
         return "rocket-outline";
       case "packed":
         return "package-outline";
-      case "ordered":
+      case "accepted":
+        return "checkmark-circle-outline";
+      case "rejected":
+        return "close-circle-outline";
+      case "pending":
         return "bag-handle-outline";
       default:
         return "help-circle-outline";
     }
   };
 
-  const renderOrder = ({ item }) => (
-    <TouchableOpacity style={styles.orderCard}>
-      <View style={styles.rowTop}>
-        <Image
-          source={{
-            uri:
-              item.productId?.images?.[0] ||
-              item.productId?.image ||
-              "https://via.placeholder.com/100",
-          }}
-          style={styles.productThumb}
-        />
-        <View style={styles.productMeta}>
-          <Text style={styles.productName} numberOfLines={1}>
-            {item.productId?.name || "Product"}
-          </Text>
-          <Text style={styles.productPrice}>
-            ₹{Number(item.totalPrice || item.totalAmount || 0).toLocaleString()}
-          </Text>
-        </View>
-      </View>
+  const getCurrentStageIndex = (status) => {
+    const normalized = normalizeOrderStatus(status);
+    return ORDER_STAGES.findIndex((stage) => stage === normalized);
+  };
 
-      <View style={styles.rowMiddle}>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Ionicons
-            name={getStatusIcon(item.status)}
-            size={16}
-            color={colors.white}
+  const openTrackingUrl = async (url) => {
+    if (!url) return;
+
+    try {
+      await Linking.openURL(url);
+    } catch (_error) {
+      showAlert({
+        title: "Unable to Open",
+        message: "Tracking URL is unavailable on this device",
+        type: "warning",
+      });
+    }
+  };
+
+  const handleViewDetails = (order) => {
+    const product = order?.productId;
+
+    if (!product || !product._id) {
+      showAlert({
+        title: "Unavailable",
+        message: "Product details are not available for this order",
+        type: "warning",
+      });
+      return;
+    }
+
+    navigation.navigate("ProductScreen", { product });
+  };
+
+  const renderOrder = ({ item }) => {
+    const normalizedStatus = normalizeOrderStatus(item.status);
+    const currentStageIndex = getCurrentStageIndex(item.status);
+
+    return (
+      <TouchableOpacity style={styles.orderCard}>
+        <View style={styles.rowTop}>
+          <Image
+            source={{
+              uri:
+                item.productId?.images?.[0] ||
+                item.productId?.image ||
+                "https://via.placeholder.com/100",
+            }}
+            style={styles.productThumb}
           />
-          <Text style={styles.statusBadgeText}>{item.status || "pending"}</Text>
+          <View style={styles.productMeta}>
+            <Text style={styles.productName} numberOfLines={1}>
+              {item.productId?.name || "Product"}
+            </Text>
+            <Text style={styles.productPrice}>
+              ₹
+              {Number(
+                item.totalPrice || item.totalAmount || 0,
+              ).toLocaleString()}
+            </Text>
+          </View>
         </View>
-        <Text style={styles.orderDate}>
-          {new Date(item.createdAt).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })}
-        </Text>
-      </View>
 
-      <View style={styles.rowActions}>
-        <TouchableOpacity style={styles.trackBtn}>
-          <Text style={styles.trackBtnText}>Track</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryBtn}>
-          <Text style={styles.secondaryBtnText}>View Details</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.rowMiddle}>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(normalizedStatus) },
+            ]}
+          >
+            <Ionicons
+              name={getStatusIcon(normalizedStatus)}
+              size={16}
+              color={colors.white}
+            />
+            <Text style={styles.statusBadgeText}>{normalizedStatus}</Text>
+          </View>
+          <Text style={styles.orderDate}>
+            {new Date(item.createdAt).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </Text>
+        </View>
+
+        <View style={styles.timelineWrap}>
+          {ORDER_STAGES.map((stage, index) => {
+            const completed =
+              normalizedStatus !== "Rejected" &&
+              currentStageIndex >= 0 &&
+              index <= currentStageIndex;
+
+            return (
+              <View key={`${item._id}-${stage}`} style={styles.timelineStep}>
+                <View
+                  style={[
+                    styles.timelineDot,
+                    completed && styles.timelineDotActive,
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.timelineLabel,
+                    completed && styles.timelineLabelActive,
+                  ]}
+                >
+                  {stage}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {normalizedStatus === "Shipped" ? (
+          <View style={styles.trackingInfoWrap}>
+            <Text style={styles.trackingInfoText}>
+              Courier: {item.courierName || "N/A"}
+            </Text>
+            <Text style={styles.trackingInfoText}>
+              Tracking ID: {item.trackingId || "N/A"}
+            </Text>
+            <TouchableOpacity
+              style={styles.trackBtn}
+              onPress={() => openTrackingUrl(item.trackingUrl)}
+            >
+              <Text style={styles.trackBtnText}>Track Package</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <View style={styles.rowActions}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => handleViewDetails(item)}
+          >
+            <Text style={styles.secondaryBtnText}>View Details</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const FilterChip = ({ label, value, selected }) => (
     <TouchableOpacity
@@ -155,7 +263,10 @@ const OrderTrackingScreen = ({ navigation }) => {
 
   const filteredOrders = orders.filter((order) => {
     if (selectedFilter === "all") return true;
-    return order.status?.toLowerCase() === selectedFilter.toLowerCase();
+    return (
+      normalizeOrderStatus(order.status).toLowerCase() ===
+      selectedFilter.toLowerCase()
+    );
   });
 
   return (
@@ -186,10 +297,12 @@ const OrderTrackingScreen = ({ navigation }) => {
             contentContainerStyle={styles.filterContent}
             data={[
               { label: "All", value: "all" },
-              { label: "Ordered", value: "ordered" },
+              { label: "Pending", value: "pending" },
+              { label: "Accepted", value: "accepted" },
               { label: "Packed", value: "packed" },
               { label: "Shipped", value: "shipped" },
               { label: "Delivered", value: "delivered" },
+              { label: "Rejected", value: "rejected" },
             ]}
             keyExtractor={(item) => item.value}
             renderItem={({ item }) => (
@@ -384,12 +497,15 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     gap: 8,
+    marginTop: 10,
   },
   trackBtn: {
     backgroundColor: "#EFF6FF",
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 14,
+    alignSelf: "flex-start",
+    marginTop: 8,
   },
   trackBtnText: {
     color: "#007AFF",
@@ -407,6 +523,48 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontSize: 12,
     fontWeight: "600",
+  },
+  timelineWrap: {
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    marginTop: 4,
+    paddingTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  timelineStep: {
+    alignItems: "center",
+    flex: 1,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#D1D5DB",
+    marginBottom: 4,
+  },
+  timelineDotActive: {
+    backgroundColor: "#2563EB",
+  },
+  timelineLabel: {
+    fontSize: 10,
+    color: "#9CA3AF",
+    textAlign: "center",
+  },
+  timelineLabelActive: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+  },
+  trackingInfoWrap: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+  },
+  trackingInfoText: {
+    fontSize: 12,
+    color: "#334155",
+    marginBottom: 4,
   },
   centerContainer: {
     flex: 1,

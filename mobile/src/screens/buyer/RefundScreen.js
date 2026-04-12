@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,94 +10,228 @@ import {
   TextInput,
   Modal,
 } from "react-native";
-import { colors } from "../../theme/colors";
+import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import api from "../../api/config";
-import { useAppAlert } from "../../context/AlertContext";
-import CustomButton from "../../components/Button";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenSurface from "../../components/ScreenSurface";
 import ScreenHeader from "../../components/ScreenHeader";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import api, { getApiDebugInfo } from "../../api/config";
+import { colors } from "../../theme/colors";
+import { useAppAlert } from "../../context/AlertContext";
 import { useAuth } from "../../context/AuthContext";
 
+const getVideoMediaType = () => {
+  if (ImagePicker.MediaType?.Videos) {
+    return [ImagePicker.MediaType.Videos];
+  }
+  return ["videos"];
+};
+
+const uploadRefundWithMultipart = async ({ formData }) => {
+  const token = await AsyncStorage.getItem("userToken");
+  const debugInfo = getApiDebugInfo();
+  const candidateBaseUrls = Array.isArray(debugInfo?.candidateBaseUrls)
+    ? debugInfo.candidateBaseUrls
+    : [];
+  const activeBaseUrl = String(debugInfo?.activeBaseUrl || "").trim();
+  const baseUrls = [activeBaseUrl, ...candidateBaseUrls].filter(
+    (url, index, arr) => Boolean(url) && arr.indexOf(url) === index,
+  );
+
+  let lastError = null;
+
+  for (const baseUrl of baseUrls) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const endpoint = `${baseUrl}/refunds`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const responseText = await response.text();
+      let responseJson = null;
+
+      try {
+        responseJson = responseText ? JSON.parse(responseText) : null;
+      } catch (_parseError) {
+        responseJson = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          responseJson?.message ||
+            responseText ||
+            `Refund request failed (status ${response.status})`,
+        );
+      }
+
+      return responseJson;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Refund request failed");
+};
+
 const RefundScreen = ({ navigation }) => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [reason, setReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const { showAlert } = useAppAlert();
-  const { userToken } = useAuth();
   const insets = useSafeAreaInsets();
+  const { userToken } = useAuth();
+  const { showAlert } = useAppAlert();
 
-  useEffect(() => {
-    fetchOrders();
-  }, [userToken]);
+  const [orders, setOrders] = useState([]);
+  const [refunds, setRefunds] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [reason, setReason] = useState("");
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchRefundData = async () => {
     if (!userToken) {
       setOrders([]);
+      setRefunds([]);
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      const { data } = await api.get("/orders/my-orders");
-      // Filter only delivered orders eligible for refund
-      const eligibleOrders =
-        data?.filter((order) => order.status === "Delivered") || [];
-      setOrders(eligibleOrders);
+      const [ordersRes, refundsRes] = await Promise.all([
+        api.get("/orders/my-orders"),
+        api.get("/refunds/my"),
+      ]);
+
+      const refundItems = Array.isArray(refundsRes.data) ? refundsRes.data : [];
+      const refundedOrderIds = new Set(
+        refundItems
+          .map((refund) => String(refund?.order?._id || refund?.orderId || "").trim())
+          .filter(Boolean),
+      );
+
+      const deliveredOrders = (ordersRes.data || []).filter(
+        (order) =>
+          order.status === "Delivered" &&
+          !refundedOrderIds.has(String(order?._id || "").trim()),
+      );
+
+      setOrders(deliveredOrders);
+      setRefunds(refundItems);
     } catch (error) {
       if (error?.response?.status === 401) {
         setOrders([]);
-        return;
+        setRefunds([]);
+      } else {
+        showAlert({
+          title: "Error",
+          message: error?.response?.data?.message || "Failed to load refunds",
+          type: "error",
+        });
       }
-      showAlert({
-        title: "Error",
-        message: "Failed to load orders",
-        type: "error",
-      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRefundRequest = async () => {
-    if (!reason.trim()) {
+  useEffect(() => {
+    fetchRefundData();
+  }, [userToken]);
+
+  const pickUnboxingVideo = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
       showAlert({
-        title: "Validation Error",
-        message: "Please provide a refund reason",
+        title: "Permission Required",
+        message: "Allow gallery access to attach unboxing video",
         type: "warning",
       });
       return;
     }
 
-    setSubmitting(true);
-    try {
-      // In a real app, you would upload video proof here
-      // For now, we'll just submit the refund request
-      await api.post("/refunds", {
-        orderId: selectedOrder._id,
-        reason: reason,
-      });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: getVideoMediaType(),
+      quality: 0.8,
+    });
 
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    setSelectedVideo({
+      uri: asset.uri,
+      fileName: asset.fileName || `unboxing_${Date.now()}.mp4`,
+      mimeType: asset.mimeType || "video/mp4",
+    });
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSelectedOrder(null);
+    setReason("");
+    setSelectedVideo(null);
+  };
+
+  const submitRefundRequest = async () => {
+    if (!selectedOrder?._id) {
+      return;
+    }
+
+    if (!reason.trim()) {
+      showAlert({
+        title: "Validation",
+        message: "Please provide refund reason",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (!selectedVideo?.uri) {
+      showAlert({
+        title: "Validation",
+        message: "Unboxing video is mandatory",
+        type: "warning",
+      });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("orderId", selectedOrder._id);
+    formData.append("reason", reason.trim());
+    formData.append("unboxingVideo", {
+      uri: selectedVideo.uri,
+      name: selectedVideo.fileName,
+      type: selectedVideo.mimeType,
+    });
+
+    try {
+      setSubmitting(true);
+      await uploadRefundWithMultipart({ formData });
       showAlert({
         title: "Success",
-        message:
-          "Refund request submitted! Please upload unboxing video proof.",
+        message: "Refund dispute submitted successfully",
         type: "success",
       });
-
-      setModalVisible(false);
-      setReason("");
-      setSelectedOrder(null);
-      fetchOrders();
+      closeModal();
+      await fetchRefundData();
     } catch (error) {
+      const message = String(error?.message || "");
+      const networkError = /network|fetch|timeout|load failed/i.test(message);
+      const timedOut = error?.name === "AbortError";
       showAlert({
-        title: "Error",
-        message: error.response?.data?.message || "Failed to submit refund",
+        title: "Upload Failed",
+        message: networkError || timedOut
+          ? "Network error while uploading video. Check backend reachability and retry."
+          : message || "Failed to submit refund",
         type: "error",
       });
     } finally {
@@ -106,187 +240,143 @@ const RefundScreen = ({ navigation }) => {
   };
 
   const renderOrderItem = ({ item }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderTitle} numberOfLines={1}>
-          {item.productId?.name || "Product"}
-        </Text>
-        <View style={styles.statusBadge}>
-          <Ionicons
-            name="checkmark-circle"
-            size={16}
-            color={colors.success}
-            style={{ marginRight: 4 }}
-          />
-          <Text style={styles.statusText}>{item.status}</Text>
-        </View>
-      </View>
-
-      <View style={styles.orderDetails}>
-        <Text style={styles.detailText}>
-          Quantity: <Text style={styles.detailValue}>{item.quantity}</Text>
-        </Text>
-        <Text style={styles.detailText}>
-          Amount: <Text style={styles.detailValue}>₹{item.totalPrice}</Text>
-        </Text>
-        <Text style={styles.detailText}>
-          From:{" "}
-          <Text style={styles.detailValue}>
-            {item.sellerId?.name || "Seller"}
-          </Text>
-        </Text>
-      </View>
-
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>{item.productId?.name || "Product"}</Text>
+      <Text style={styles.cardMeta}>Order #{String(item._id || "").slice(-6)}</Text>
+      <Text style={styles.cardMeta}>Amount: ₹{item.totalPrice || 0}</Text>
       <TouchableOpacity
-        style={styles.refundButton}
+        style={styles.actionBtn}
         onPress={() => {
           setSelectedOrder(item);
           setModalVisible(true);
         }}
       >
-        <Ionicons name="arrow-redo" size={16} color={colors.primary} />
-        <Text style={styles.refundButtonText}>Request Refund</Text>
+        <Text style={styles.actionBtnText}>Raise Dispute</Text>
       </TouchableOpacity>
+    </View>
+  );
+
+  const renderRefundStatus = ({ item }) => (
+    <View style={styles.statusCard}>
+      <View style={styles.statusHeader}>
+        <Text style={styles.statusOrderCode}>
+          Order #{String(item.order?._id || item.orderId?._id || "").slice(-6)}
+        </Text>
+        <View
+          style={[
+            styles.statusBadge,
+            {
+              backgroundColor:
+                item.status === "Approved"
+                  ? colors.success
+                  : item.status === "Rejected"
+                    ? colors.error
+                    : colors.warning,
+            },
+          ]}
+        >
+          <Text style={styles.statusBadgeText}>{item.status || "Pending"}</Text>
+        </View>
+      </View>
+      <Text style={styles.cardMeta}>Reason: {item.reason || "N/A"}</Text>
+      <Text style={styles.cardMeta}>
+        Product: {item.order?.product?.name || item.orderId?.productId?.name || "N/A"}
+      </Text>
     </View>
   );
 
   return (
     <ScreenSurface style={styles.container}>
-      <ScreenHeader title="Request Refund" navigation={navigation} />
-      <View style={styles.headerCopy}>
-        <Text style={styles.headerSubtitle}>
-          You can request refunds for delivered items within 7 days
-        </Text>
-      </View>
+      <ScreenHeader title="Refund Disputes" navigation={navigation} />
 
       {loading ? (
-        <ActivityIndicator
-          size="large"
-          color={colors.primary}
-          style={{ marginTop: 40 }}
-        />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       ) : (
         <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: 32 + insets.bottom },
-          ]}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 32 + insets.bottom,
+          }}
         >
+          <Text style={styles.sectionTitle}>Delivered Orders</Text>
           {orders.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons
-                name="checkmark-done-circle-outline"
-                size={64}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.emptyText}>
-                No eligible orders for refund yet
-              </Text>
-              <Text style={styles.emptySubtext}>
-                Only delivered orders can be refunded
-              </Text>
-            </View>
+            <Text style={styles.emptyText}>No delivered orders available for disputes</Text>
           ) : (
             <FlatList
               data={orders}
-              renderItem={renderOrderItem}
               keyExtractor={(item) => item._id}
+              renderItem={renderOrderItem}
               scrollEnabled={false}
             />
           )}
 
-          <View style={styles.infoCard}>
-            <Ionicons
-              name="information-circle-outline"
-              size={20}
-              color={colors.primary}
-              style={{ marginRight: 12 }}
+          <Text style={[styles.sectionTitle, { marginTop: 16 }]}>My Refund Status</Text>
+          {refunds.length === 0 ? (
+            <Text style={styles.emptyText}>No refund disputes submitted yet</Text>
+          ) : (
+            <FlatList
+              data={refunds}
+              keyExtractor={(item) => item._id}
+              renderItem={renderRefundStatus}
+              scrollEnabled={false}
             />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.infoTitle}>Refund Policy</Text>
-              <Text style={styles.infoText}>
-                • Unboxing video proof is mandatory{"\n"}• Refunds processed
-                within 7 days{"\n"}• Items must be in original condition
-              </Text>
-            </View>
-          </View>
+          )}
         </ScrollView>
       )}
 
-      {/* Refund Request Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Request Refund</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setReason("");
-                }}
-              >
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              <Text style={styles.modalTitle}>Create Refund Dispute</Text>
+              <TouchableOpacity onPress={closeModal}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {selectedOrder && (
-                <View style={styles.selectedOrderInfo}>
-                  <Text style={styles.selectedOrderTitle}>
-                    {selectedOrder.productId?.name}
-                  </Text>
-                  <Text style={styles.selectedOrderPrice}>
-                    ₹{selectedOrder.totalPrice}
-                  </Text>
-                </View>
-              )}
+            <Text style={styles.cardMeta}>
+              Product: {selectedOrder?.productId?.name || "N/A"}
+            </Text>
 
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Reason for Refund*</Text>
-                <TextInput
-                  style={styles.textArea}
-                  placeholder="Please provide the reason for your refund request..."
-                  placeholderTextColor={colors.textSecondary}
-                  value={reason}
-                  onChangeText={setReason}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
+            <TextInput
+              style={styles.reasonInput}
+              placeholder="Explain the issue"
+              value={reason}
+              onChangeText={setReason}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
 
-              <View style={styles.uploadNote}>
-                <Ionicons
-                  name="videocam-outline"
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={styles.uploadNoteText}>
-                  You will need to upload an unboxing video as proof for your
-                  refund request
-                </Text>
-              </View>
+            <TouchableOpacity style={styles.pickBtn} onPress={pickUnboxingVideo}>
+              <Ionicons name="videocam-outline" size={18} color={colors.primary} />
+              <Text style={styles.pickBtnText}>
+                {selectedVideo?.fileName || "Attach Unboxing Video"}
+              </Text>
+            </TouchableOpacity>
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setModalVisible(false);
-                    setReason("");
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <CustomButton
-                  title={submitting ? "Submitting..." : "Submit Request"}
-                  onPress={handleRefundRequest}
-                  style={{ flex: 1, marginLeft: 12 }}
-                  disabled={submitting}
-                />
-              </View>
-            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={closeModal}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.submitBtn,
+                  submitting ? styles.submitBtnDisabled : null,
+                ]}
+                onPress={submitRefundRequest}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.submitBtnText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -299,220 +389,160 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.lightBackground,
   },
-  headerCopy: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  emptyContainer: {
+  loadingWrap: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 60,
-    paddingBottom: 40,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 8,
-  },
-  orderCard: {
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  orderHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  orderTitle: {
-    flex: 1,
-    fontSize: 16,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: "700",
     color: colors.textPrimary,
+    marginBottom: 10,
   },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(34, 197, 94, 0.1)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.success,
-  },
-  orderDetails: {
-    marginVertical: 12,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "rgba(0, 0, 0, 0.05)",
-  },
-  detailText: {
-    fontSize: 13,
+  emptyText: {
     color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 10,
+  },
+  cardTitle: {
+    color: colors.textPrimary,
+    fontWeight: "700",
+    fontSize: 15,
     marginBottom: 4,
   },
-  detailValue: {
-    fontWeight: "600",
-    color: colors.textPrimary,
+  cardMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 4,
   },
-  refundButton: {
-    flexDirection: "row",
+  actionBtn: {
+    marginTop: 8,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 10,
-    marginTop: 12,
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    borderRadius: 8,
   },
-  refundButtonText: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  infoCard: {
-    flexDirection: "row",
-    backgroundColor: "rgba(232, 121, 249, 0.1)",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    marginBottom: 40,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
-  },
-  infoTitle: {
-    fontSize: 14,
+  actionBtnText: {
+    color: "#1D4ED8",
     fontWeight: "700",
-    color: colors.textPrimary,
+  },
+  statusCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 10,
+  },
+  statusHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 6,
   },
-  infoText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
+  statusOrderCode: {
+    color: colors.textPrimary,
+    fontWeight: "700",
   },
-  // Modal Styles
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusBadgeText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: "700",
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: 16,
   },
-  modalContent: {
+  modalCard: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 40,
-    maxHeight: "90%",
+    borderRadius: 14,
+    padding: 14,
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: 10,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: colors.textPrimary,
   },
-  selectedOrderInfo: {
-    backgroundColor: "rgba(232, 121, 249, 0.1)",
-    margin: 16,
-    padding: 16,
-    borderRadius: 12,
-  },
-  selectedOrderTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  selectedOrderPrice: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.primary,
-  },
-  formGroup: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  textArea: {
+  reasonInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: colors.textPrimary,
+    borderRadius: 10,
+    padding: 10,
     minHeight: 100,
-  },
-  uploadNote: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-    margin: 16,
-    padding: 12,
-    borderRadius: 8,
-  },
-  uploadNoteText: {
-    flex: 1,
-    fontSize: 13,
     color: colors.textPrimary,
-    marginLeft: 8,
+    backgroundColor: "#FFFFFF",
+    marginTop: 6,
+  },
+  pickBtn: {
+    marginTop: 10,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  pickBtnText: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+    fontSize: 12,
+    flex: 1,
   },
   modalActions: {
+    marginTop: 14,
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 14,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
+    gap: 8,
     alignItems: "center",
   },
-  cancelButtonText: {
-    fontSize: 14,
+  cancelBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  cancelBtnText: {
+    color: colors.textSecondary,
     fontWeight: "600",
-    color: colors.textPrimary,
+  },
+  submitBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
+  },
+  submitBtnText: {
+    color: colors.white,
+    fontWeight: "700",
   },
 });
 

@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
+    "start": "expo start --go",
+    "android": "expo start --android --go",
+    "android:devbuild": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
@@ -21,6 +22,7 @@
     "expo-linear-gradient": "^55.0.12",
     "expo-sharing": "^55.0.17",
     "expo-status-bar": "^55.0.5",
+    "expo-video": "~55.0.15",
     "react": "19.2.0",
     "react-native": "^0.83.4",
     "react-native-circular-progress": "^1.4.1",

@@ -518,14 +518,37 @@ const validateRefundDecisionRequest = (req, res, next) => {
     return fail(res, "status must be Approved or Rejected");
   }
 
-  if (!adminReason || adminReason.length > 500) {
-    return fail(
-      res,
-      "adminReason is required and must be 500 characters or less",
-    );
+  if (adminReason.length > 500) {
+    return fail(res, "adminReason must be 500 characters or less");
   }
 
   req.body = { ...req.body, status, adminReason };
+  return next();
+};
+
+const validateSellerRefundResponseRequest = (req, res, next) => {
+  const sellerResponse = trimmedString(req.body?.sellerResponse);
+
+  if (!sellerResponse) {
+    return fail(res, "sellerResponse is required");
+  }
+
+  if (sellerResponse.length > 1000) {
+    return fail(res, "sellerResponse must be 1000 characters or less");
+  }
+
+  req.body = { ...req.body, sellerResponse };
+  return next();
+};
+
+const validateSellerRefundDecisionRequest = (req, res, next) => {
+  const status = trimmedString(req.body?.status);
+
+  if (!["Accepted", "Rejected"].includes(status)) {
+    return fail(res, "status must be Accepted or Rejected");
+  }
+
+  req.body = { ...req.body, status };
   return next();
 };
 
@@ -613,6 +636,8 @@ module.exports = {
   validatePaymentVerificationRequest,
   validateRefundCreateRequest,
   validateRefundDecisionRequest,
+  validateSellerRefundResponseRequest,
+  validateSellerRefundDecisionRequest,
   validateSellerDecisionRequest,
   validateComplianceDocDecisionRequest,
   validateFilePresence,

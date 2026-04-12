@@ -18,8 +18,14 @@ import api from "../../api/config";
 import { useCart } from "../../context/CartContext";
 import { useAppAlert } from "../../context/AlertContext";
 import { Ionicons } from "@expo/vector-icons";
-import RazorpayCheckout from "react-native-razorpay";
 import ScreenSurface from "../../components/ScreenSurface";
+
+let RazorpayCheckout = null;
+try {
+  RazorpayCheckout = require("react-native-razorpay");
+} catch (_err) {
+  RazorpayCheckout = null;
+}
 
 const CartCheckoutScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
@@ -97,6 +103,12 @@ const CartCheckoutScreen = ({ route, navigation }) => {
           razorpay_signature: "mock_sig",
         });
       } else {
+        if (!RazorpayCheckout?.open) {
+          throw new Error(
+            "Razorpay SDK is unavailable in Expo Go. Run backend in test/mock payment mode or use a development build.",
+          );
+        }
+
         const options = {
           description: "Payment for your Roots order",
           image:

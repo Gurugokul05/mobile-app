@@ -13,6 +13,12 @@ try {
   console.log("Razorpay keys missing or invalid, mockup mode available.");
 }
 
+const normalizeOrderStatus = (status) => {
+  if (status === "Ordered") return "Pending";
+  if (status === "Cancelled") return "Rejected";
+  return status;
+};
+
 // @desc    Create new order & Razorpay order
 // @route   POST /api/orders
 // @access  Private
@@ -31,9 +37,15 @@ exports.createOrder = async (req, res) => {
 
     const totalPrice = product.price * quantity;
 
+    const isTestMode =
+      String(process.env.RAZORPAY_TEST_MODE || "false")
+        .trim()
+        .toLowerCase() === "true";
+
     // Create Razorpay order whenever keys are configured; fallback to mock only if unavailable.
     let rpOrder;
     const canUseRazorpayApi =
+      !isTestMode &&
       Boolean(razorpayInstance) &&
       Boolean(process.env.RAZORPAY_KEY_ID) &&
       Boolean(process.env.RAZORPAY_KEY_SECRET);
@@ -56,6 +68,7 @@ exports.createOrder = async (req, res) => {
       productId,
       quantity,
       totalPrice,
+      status: "Pending",
       paymentDetails: {
         razorpayOrderId: rpOrder.id,
         status: "Pending",
@@ -76,11 +89,44 @@ exports.createOrder = async (req, res) => {
   }
 };
 
-// @desc    Verify Razorpay Payment
+// @desc    Get Razorpay configuration status
+// @route   GET /api/orders/razorpay/diagnostics
+// @access  Public
+exports.getRazorpayDiagnostics = async (req, res) => {
+  const isTestMode =
+    String(process.env.RAZORPAY_TEST_MODE || "false")
+      .trim()
+      .toLowerCase() === "true";
+  const hasKeys =
+    Boolean(process.env.RAZORPAY_KEY_ID) &&
+    Boolean(process.env.RAZORPAY_KEY_SECRET);
+  const isConfigured = hasKeys && razorpayInstance;
+
+  res.json({
+    razorpayConfigured: isConfigured,
+    testMode: isTestMode,
+    hasKeyId: Boolean(process.env.RAZORPAY_KEY_ID),
+    hasKeySecret: Boolean(process.env.RAZORPAY_KEY_SECRET),
+    keyIdMasked: process.env.RAZORPAY_KEY_ID
+      ? `${String(process.env.RAZORPAY_KEY_ID).slice(0, 8)}***`
+      : null,
+    message: isConfigured
+      ? "Razorpay is configured and ready for payments"
+      : isTestMode
+        ? "Test mode enabled - payments will be processed in mock/test flow"
+        : "Razorpay is not configured. Payments will use mock mode.",
+  });
+};
+
 // @route   POST /api/orders/:id/verify-payment
 // @access  Private
 exports.verifyPayment = async (req, res) => {
   try {
+    const isTestMode =
+      String(process.env.RAZORPAY_TEST_MODE || "false")
+        .trim()
+        .toLowerCase() === "true";
+
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
       req.body;
     const order = await Order.findById(req.params.id);
@@ -89,6 +135,18 @@ exports.verifyPayment = async (req, res) => {
 
     if (!razorpay_order_id) {
       return res.status(400).json({ message: "Missing razorpay_order_id" });
+    }
+
+    if (isTestMode) {
+      if (order.paymentDetails?.razorpayOrderId !== razorpay_order_id) {
+        return res.status(400).json({ message: "Razorpay order mismatch" });
+      }
+
+      order.paymentDetails.status = "Completed";
+      order.paymentDetails.razorpayPaymentId =
+        razorpay_payment_id || "mock_payment_id";
+      await order.save();
+      return res.json({ message: "Payment verified successfully (test mode)" });
     }
 
     // Mock-order verification for local/dev flow without Razorpay credentials
@@ -196,6 +254,13 @@ exports.uploadPackingProof = async (req, res) => {
     )
       return res.status(403).json({ message: "Not authorized" });
 
+    const currentStatus = normalizeOrderStatus(order.status);
+    if (currentStatus !== "Accepted") {
+      return res.status(400).json({
+        message: "Packing proof can only be uploaded for accepted orders",
+      });
+    }
+
     if (!req.file)
       return res
         .status(400)
@@ -203,10 +268,172 @@ exports.uploadPackingProof = async (req, res) => {
 
     order.packingProofUrl = req.file.path;
     order.status = "Packed";
+    order.updatedAt = new Date();
 
     await order.save();
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Accept pending order (Seller)
+// @route   PUT /api/orders/:id/accept
+// @access  Private/Seller
+exports.acceptOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (
+      req.user.role !== "seller" ||
+      order.sellerId.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (normalizeOrderStatus(order.status) !== "Pending") {
+      return res
+        .status(400)
+        .json({ message: "Only pending orders can be accepted" });
+    }
+
+    order.status = "Accepted";
+    order.updatedAt = new Date();
+    await order.save();
+
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Reject pending order (Seller)
+// @route   PUT /api/orders/:id/reject
+// @access  Private/Seller
+exports.rejectOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (
+      req.user.role !== "seller" ||
+      order.sellerId.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (normalizeOrderStatus(order.status) !== "Pending") {
+      return res
+        .status(400)
+        .json({ message: "Only pending orders can be rejected" });
+    }
+
+    order.status = "Rejected";
+    order.updatedAt = new Date();
+    await order.save();
+
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Mark packed order as shipped with tracking
+// @route   PUT /api/orders/:id/ship
+// @access  Private/Seller
+exports.shipOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (
+      req.user.role !== "seller" ||
+      order.sellerId.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (normalizeOrderStatus(order.status) !== "Packed") {
+      return res
+        .status(400)
+        .json({ message: "Only packed orders can be marked as shipped" });
+    }
+
+    if (!order.packingProofUrl) {
+      return res
+        .status(400)
+        .json({ message: "Packing proof is required before shipping" });
+    }
+
+    const trackingId = String(req.body?.trackingId || "").trim();
+    const courierName = String(req.body?.courierName || "").trim();
+
+    if (trackingId.length < 8) {
+      return res
+        .status(400)
+        .json({ message: "trackingId must be at least 8 characters" });
+    }
+
+    if (!courierName) {
+      return res.status(400).json({ message: "courierName is required" });
+    }
+
+    order.trackingId = trackingId;
+    order.courierName = courierName;
+    order.trackingUrl = `https://track.example.com/${trackingId}`;
+    order.shippedAt = new Date();
+    order.status = "Shipped";
+    order.updatedAt = new Date();
+
+    await order.save();
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Mark shipped order as delivered
+// @route   PUT /api/orders/:id/deliver
+// @access  Private/AdminOrSeller
+exports.deliverOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isSellerOwner =
+      req.user.role === "seller" &&
+      order.sellerId.toString() === req.user._id.toString();
+
+    if (!isAdmin && !isSellerOwner) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (normalizeOrderStatus(order.status) !== "Shipped") {
+      return res
+        .status(400)
+        .json({ message: "Only shipped orders can be marked as delivered" });
+    }
+
+    order.status = "Delivered";
+    order.updatedAt = new Date();
+
+    await order.save();
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };

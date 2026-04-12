@@ -6,14 +6,26 @@ const {
   uploadPackingProof,
   getMyOrders,
   getOrderById,
+  getRazorpayDiagnostics,
+  acceptOrder,
+  rejectOrder,
+  shipOrder,
+  deliverOrder,
 } = require("../controllers/orderController");
-const { protect, seller, buyer } = require("../middlewares/auth");
+const {
+  protect,
+  seller,
+  buyer,
+  adminOrSeller,
+} = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
 const {
   validateObjectIdParam,
   validateOrderCreateRequest,
   validatePaymentVerificationRequest,
 } = require("../middlewares/validators");
+
+router.get("/razorpay/diagnostics", getRazorpayDiagnostics);
 
 router.route("/").post(protect, buyer, validateOrderCreateRequest, createOrder);
 
@@ -40,5 +52,21 @@ router
     upload.single("packingProof"),
     uploadPackingProof,
   );
+
+router
+  .route("/:id/accept")
+  .put(protect, seller, validateObjectIdParam("id"), acceptOrder);
+
+router
+  .route("/:id/reject")
+  .put(protect, seller, validateObjectIdParam("id"), rejectOrder);
+
+router
+  .route("/:id/ship")
+  .put(protect, seller, validateObjectIdParam("id"), shipOrder);
+
+router
+  .route("/:id/deliver")
+  .put(protect, adminOrSeller, validateObjectIdParam("id"), deliverOrder);
 
 module.exports = router;

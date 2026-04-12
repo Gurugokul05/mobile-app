@@ -20,6 +20,7 @@ import CartCheckoutScreen from "../screens/buyer/CartCheckoutScreen";
 import OrderTrackingScreen from "../screens/buyer/OrderTrackingScreen";
 import ProfileScreen from "../screens/buyer/ProfileScreen";
 import BuyerSellerProfileScreen from "../screens/buyer/SellerProfileScreen";
+import RefundScreen from "../screens/buyer/RefundScreen";
 import DashboardScreen from "../screens/seller/DashboardScreen";
 import SellerOnboardingScreen from "../screens/seller/OnboardingScreen";
 import ProductUploadScreen from "../screens/seller/ProductUploadScreen";
@@ -33,11 +34,17 @@ import SellerTransactionsScreen from "../screens/seller/SellerTransactionsScreen
 import SellerSecurityScreen from "../screens/seller/SellerSecurityScreen";
 import SellerComplianceScreen from "../screens/seller/SellerComplianceScreen";
 import SellerComplianceUploadScreen from "../screens/seller/SellerComplianceUploadScreen";
+import SellerOrderDetailScreen from "../screens/seller/SellerOrderDetailScreen";
+import SellerRefundRequestsScreen from "../screens/seller/SellerRefundRequestsScreen";
+import SellerEvidencePlayerScreen from "../screens/seller/SellerEvidencePlayerScreen";
 import AddressesScreen from "../screens/buyer/AddressesScreen";
 import PaymentMethodsScreen from "../screens/buyer/PaymentMethodsScreen";
 import BillingHistoryScreen from "../screens/buyer/BillingHistoryScreen";
 import InfoScreen from "../screens/buyer/InfoScreen";
 import WishlistScreen from "../screens/buyer/WishlistScreen";
+import PrivacyPolicyScreen from "../screens/buyer/PrivacyPolicyScreen";
+import TermsScreen from "../screens/buyer/TermsScreen";
+import HelpCenterScreen from "../screens/buyer/HelpCenterScreen";
 
 const Stack = createNativeStackNavigator();
 const BuyerTab = createBottomTabNavigator();
@@ -212,11 +219,24 @@ export default function AppNavigator() {
         />
         <Stack.Screen name="Checkout" component={CartCheckoutScreen} />
         <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
+        <Stack.Screen name="Refunds" component={RefundScreen} />
         <Stack.Screen
           name="SellerOnboarding"
           component={SellerOnboardingScreen}
         />
         <Stack.Screen name="ProductUpload" component={ProductUploadScreen} />
+        <Stack.Screen
+          name="SellerOrderDetail"
+          component={SellerOrderDetailScreen}
+        />
+        <Stack.Screen
+          name="SellerRefundRequests"
+          component={SellerRefundRequestsScreen}
+        />
+        <Stack.Screen
+          name="SellerEvidencePlayer"
+          component={SellerEvidencePlayerScreen}
+        />
         <Stack.Screen
           name="SellerPublicStorePreview"
           component={SellerPublicStorePreviewScreen}
@@ -242,6 +262,9 @@ export default function AppNavigator() {
         <Stack.Screen name="BillingHistory" component={BillingHistoryScreen} />
         <Stack.Screen name="Info" component={InfoScreen} />
         <Stack.Screen name="Wishlist" component={WishlistScreen} />
+        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+        <Stack.Screen name="Terms" component={TermsScreen} />
+        <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -16,10 +16,81 @@ const MAX_LOGIN_ACTIVITY = 20;
 const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = String(process.env.SMTP_USER || "").trim();
-const SMTP_PASS = String(process.env.SMTP_PASS || "").trim();
-const SMTP_FROM = String(process.env.SMTP_FROM || SMTP_USER || "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || "")
+  .replace(/\s+/g, "")
+  .trim();
+const RAW_SMTP_FROM = String(process.env.SMTP_FROM || "").trim();
+const ALLOW_SMTP_DIAGNOSTICS =
+  String(process.env.ALLOW_SMTP_DIAGNOSTICS || "false")
+    .trim()
+    .toLowerCase() === "true";
+const SMTP_DIAGNOSTIC_KEY = String(
+  process.env.SMTP_DIAGNOSTIC_KEY || "",
+).trim();
 const SMTP_SECURE =
-  String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+  String(process.env.SMTP_SECURE || "false")
+    .trim()
+    .toLowerCase() === "true";
+
+const isValidEmailAddress = (value) =>
+  /^\S+@\S+\.\S+$/.test(String(value || "").trim());
+
+const resolveSmtpFrom = () => {
+  if (RAW_SMTP_FROM.includes("<") && RAW_SMTP_FROM.includes(">")) {
+    const addr = RAW_SMTP_FROM.slice(
+      RAW_SMTP_FROM.lastIndexOf("<") + 1,
+      RAW_SMTP_FROM.lastIndexOf(">"),
+    ).trim();
+
+    if (isValidEmailAddress(addr)) {
+      return RAW_SMTP_FROM;
+    }
+  }
+
+  if (isValidEmailAddress(RAW_SMTP_FROM)) {
+    return RAW_SMTP_FROM;
+  }
+
+  if (isValidEmailAddress(SMTP_USER)) {
+    return SMTP_USER;
+  }
+
+  return "";
+};
+
+const SMTP_FROM = resolveSmtpFrom();
+
+const maskValue = (value) => {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  if (input.length <= 4) return "*".repeat(input.length);
+  return `${input.slice(0, 2)}${"*".repeat(input.length - 4)}${input.slice(-2)}`;
+};
+
+const getSmtpConfigStatus = () => {
+  const missingFields = [];
+
+  if (!SMTP_HOST) missingFields.push("SMTP_HOST");
+  if (!SMTP_PORT) missingFields.push("SMTP_PORT");
+  if (!SMTP_USER) missingFields.push("SMTP_USER");
+  if (!SMTP_PASS) missingFields.push("SMTP_PASS");
+  if (!SMTP_FROM) missingFields.push("SMTP_FROM");
+
+  return {
+    configured: missingFields.length === 0,
+    missingFields,
+    values: {
+      host: SMTP_HOST || null,
+      port: SMTP_PORT || null,
+      secure: SMTP_SECURE,
+      user: SMTP_USER ? maskValue(SMTP_USER) : null,
+      from: SMTP_FROM || null,
+      rawFrom: RAW_SMTP_FROM || null,
+      passPresent: Boolean(SMTP_PASS),
+      passLength: SMTP_PASS ? SMTP_PASS.length : 0,
+    },
+  };
+};
 
 const isSmtpConfigured = () =>
   Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_FROM);
@@ -118,14 +189,109 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
         ? "If you did not request account deletion, ignore this email and your account will remain active."
         : "If you did not initiate this registration, you can safely ignore this email.";
 
-  const transporter = createSmtpTransporter();
-  await transporter.sendMail({
-    from: SMTP_FROM,
-    to,
-    subject,
-    text: `Your Roots OTP is ${otp}. It expires in 5 minutes.`,
-    html: buildOtpEmailTemplate({ heading, intro, otp, footerNote }),
-  });
+  try {
+    const transporter = createSmtpTransporter();
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject,
+      text: `Your Roots OTP is ${otp}. It expires in 5 minutes.`,
+      html: buildOtpEmailTemplate({ heading, intro, otp, footerNote }),
+    });
+  } catch (error) {
+    const smtpErrorParts = [
+      error?.code,
+      error?.responseCode ? `responseCode=${error.responseCode}` : "",
+      error?.response,
+      error?.command ? `command=${error.command}` : "",
+      error?.message,
+    ].filter(Boolean);
+    const smtpError = smtpErrorParts.join(" | ") || "Unknown SMTP error";
+    throw new Error(
+      `Failed to send OTP email. Check SMTP credentials and sender configuration (${smtpError})`,
+    );
+  }
+};
+
+exports.checkSmtpHealth = async (req, res) => {
+  if (!ALLOW_SMTP_DIAGNOSTICS) {
+    return res.status(403).json({
+      message:
+        "SMTP diagnostics endpoint is disabled. Set ALLOW_SMTP_DIAGNOSTICS=true in backend .env",
+    });
+  }
+
+  if (SMTP_DIAGNOSTIC_KEY) {
+    const providedKey = String(
+      req.headers["x-smtp-diagnostic-key"] || "",
+    ).trim();
+    if (!providedKey || providedKey !== SMTP_DIAGNOSTIC_KEY) {
+      return res.status(401).json({
+        message: "Invalid SMTP diagnostics key",
+      });
+    }
+  }
+
+  const configStatus = getSmtpConfigStatus();
+  if (!configStatus.configured) {
+    return res.status(500).json({
+      ok: false,
+      stage: "config",
+      message: "SMTP config is incomplete",
+      ...configStatus,
+    });
+  }
+
+  try {
+    const transporter = createSmtpTransporter();
+    await transporter.verify();
+
+    const shouldSendTestEmail = req.body?.sendTestEmail === true;
+    const testEmail = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (shouldSendTestEmail) {
+      if (!isValidEmailAddress(testEmail)) {
+        return res.status(400).json({
+          ok: false,
+          stage: "input",
+          message: "A valid email is required when sendTestEmail is true",
+          ...configStatus,
+        });
+      }
+
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: testEmail,
+        subject: "Roots SMTP Diagnostic Test",
+        text: "SMTP diagnostics passed. This is a test email from Roots backend.",
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      stage: shouldSendTestEmail ? "verify+send" : "verify",
+      message: shouldSendTestEmail
+        ? "SMTP verify passed and test email sent"
+        : "SMTP verify passed",
+      ...configStatus,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      stage: "verify",
+      message: "SMTP verification failed",
+      error: {
+        code: error?.code || null,
+        responseCode: error?.responseCode || null,
+        response: error?.response || null,
+        command: error?.command || null,
+        message: error?.message || "Unknown SMTP error",
+      },
+      ...configStatus,
+    });
+  }
 };
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));

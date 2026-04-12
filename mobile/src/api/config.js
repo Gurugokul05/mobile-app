@@ -58,9 +58,15 @@ const resolveCandidateHosts = () => {
 };
 
 const configuredBaseUrl = (process.env.EXPO_PUBLIC_API_URL || "").trim();
-const candidateBaseUrls = configuredBaseUrl
-  ? [configuredBaseUrl]
-  : resolveCandidateHosts().map((host) => `http://${host}:5000/api`);
+const autoDetectedBaseUrls = resolveCandidateHosts().map(
+  (host) => `http://${host}:5000/api`,
+);
+const candidateBaseUrls = [configuredBaseUrl, ...autoDetectedBaseUrls].filter(
+  (url, index, arr) => {
+    const normalized = String(url || "").trim();
+    return Boolean(normalized) && arr.indexOf(normalized) === index;
+  },
+);
 
 const BASE_URL = candidateBaseUrls[0] || "http://localhost:5000/api";
 
@@ -122,16 +128,34 @@ api.interceptors.response.use(
       });
     }
 
-    if (!originalConfig || !isNetworkError || configuredBaseUrl) {
+    if (!originalConfig || !isNetworkError) {
       return Promise.reject(error);
     }
 
     const attemptedBaseUrl = originalConfig.baseURL || BASE_URL;
+    const attemptedBaseUrls = Array.isArray(originalConfig._attemptedBaseUrls)
+      ? originalConfig._attemptedBaseUrls
+      : [];
+
+    const updatedAttemptedBaseUrls = attemptedBaseUrls.includes(
+      attemptedBaseUrl,
+    )
+      ? attemptedBaseUrls
+      : [...attemptedBaseUrls, attemptedBaseUrl];
+
+    originalConfig._attemptedBaseUrls = updatedAttemptedBaseUrls;
+
     const nextBaseUrl = candidateBaseUrls.find(
-      (url) => url !== attemptedBaseUrl,
+      (url) => !updatedAttemptedBaseUrls.includes(url),
     );
 
     if (!nextBaseUrl) {
+      if (originalConfig?.data instanceof FormData) {
+        console.log(
+          "🛑 [AXIOS] Exhausted base URL retries:",
+          updatedAttemptedBaseUrls,
+        );
+      }
       return Promise.reject(error);
     }
 

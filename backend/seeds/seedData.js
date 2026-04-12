@@ -136,6 +136,8 @@ const PRODUCTS_DATA = [
     originPlace: "Kashmir",
     images: [
       "https://images.unsplash.com/photo-1604085572504-a392ddf0d86a?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1595777707802-c55afe0a4200?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "arun@sellers.com",
@@ -148,6 +150,8 @@ const PRODUCTS_DATA = [
     originPlace: "Rajasthan",
     images: [
       "https://images.unsplash.com/photo-1610715936287-6c2ad208cdbf?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1578586306625-a9a3a97e6db8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1578500494198-246f612d03b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "priya@sellers.com",
@@ -160,6 +164,8 @@ const PRODUCTS_DATA = [
     originPlace: "Darjeeling",
     images: [
       "https://images.unsplash.com/photo-1576092762791-dd9e222046d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1597318972265-6d23b9a52e6d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1594373862519-f3a5662bbd59?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "rajesh@sellers.com",
@@ -172,6 +178,8 @@ const PRODUCTS_DATA = [
     originPlace: "Tamil Nadu",
     images: [
       "https://images.unsplash.com/photo-1610030469983-98e550905b0f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1590588903038-a0c9ecd1fd4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "deepika@sellers.com",
@@ -184,6 +192,8 @@ const PRODUCTS_DATA = [
     originPlace: "Mysore",
     images: [
       "https://images.unsplash.com/photo-1629851498382-b7e1ce790472?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1606312564261-c64e33ca6116?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1562584081-7ceef5fa0ffd?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: false,
     sellerEmail: "vikram@sellers.com",
@@ -196,6 +206,8 @@ const PRODUCTS_DATA = [
     originPlace: "Kerala",
     images: [
       "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1614707267537-b85faf00021b?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1611787620908-c82eeec06029?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "arun@sellers.com",
@@ -208,6 +220,8 @@ const PRODUCTS_DATA = [
     originPlace: "Karnataka",
     images: [
       "https://images.unsplash.com/photo-1578586306625-a9a3a97e6db8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1594373862519-f3a5662bbd59?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1523293182086-7651a899d37f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "premium@seller.com",
@@ -220,6 +234,8 @@ const PRODUCTS_DATA = [
     originPlace: "Karnataka",
     images: [
       "https://images.unsplash.com/photo-1578586306625-a9a3a97e6db8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1606312564261-c64e33ca6116?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1562584081-7ceef5fa0ffd?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "premium@seller.com",
@@ -232,6 +248,8 @@ const PRODUCTS_DATA = [
     originPlace: "Karnataka",
     images: [
       "https://images.unsplash.com/photo-1610715936287-6c2ad208cdbf?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1578500494198-246f612d03b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1578586306625-a9a3a97e6db8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "premium@seller.com",
@@ -244,10 +262,25 @@ const PRODUCTS_DATA = [
     originPlace: "Karnataka",
     images: [
       "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1575074857846-4ae8b6e355b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+      "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
     ],
     isVerified: true,
     sellerEmail: "premium@seller.com",
   },
+];
+
+const PRODUCT_REPLACEMENT_IMAGES = [
+  "https://images.unsplash.com/photo-1604085572504-a392ddf0d86a?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1610715936287-6c2ad208cdbf?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1876864936893-f80bc31aa3d0?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1578586306625-a9a3a97e6db8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1606312564261-c64e33ca6116?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1590588903038-a0c9ecd1fd4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1570710891776-e80fcf6edd41?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1594373862519-f3a5662bbd59?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
+  "https://images.unsplash.com/photo-1523293182086-7651a899d37f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
 ];
 
 const ensureDemoUsers = async () => {
@@ -352,11 +385,45 @@ const seedDatabase = async () => {
     console.log("\n📦 Starting database seeding...");
     await ensureDemoUsers();
     await ensureProducts();
+    await updateProductsWithMissingImages();
     await ensureTestOrders();
     console.log("✅ Database seeding completed\n");
   } catch (error) {
     console.error("❌ Error seeding database:", error.message);
     console.error("Stack:", error.stack);
+  }
+};
+
+const updateProductsWithMissingImages = async () => {
+  try {
+    const productsWithoutImages = await Product.find({
+      $or: [{ images: { $exists: false } }, { images: { $size: 0 } }],
+    });
+
+    if (productsWithoutImages.length === 0) {
+      return;
+    }
+
+    let updated = 0;
+    for (const product of productsWithoutImages) {
+      const randomImages = [];
+      for (let i = 0; i < 3; i++) {
+        const randomIdx = Math.floor(
+          Math.random() * PRODUCT_REPLACEMENT_IMAGES.length,
+        );
+        randomImages.push(PRODUCT_REPLACEMENT_IMAGES[randomIdx]);
+      }
+
+      product.images = randomImages;
+      await product.save();
+      updated += 1;
+    }
+
+    if (updated > 0) {
+      console.log(`✅ Added images to ${updated} product(s) without images`);
+    }
+  } catch (error) {
+    console.error("❌ Error updating products with images:", error.message);
   }
 };
 

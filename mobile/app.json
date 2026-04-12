@@ -16,6 +16,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": ["expo-video"],
     "ios": {
       "supportsTablet": true
     },
@@ -30,6 +31,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4b80dfba-7ddc-481f-a368-a5e4b4d6aa37"
+      }
     }
   }
 }

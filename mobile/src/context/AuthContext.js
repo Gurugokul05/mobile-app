@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import api from "../api/config";
+import api, { getApiDebugInfo } from "../api/config";
 
 export const AuthContext = createContext();
 
@@ -122,7 +122,13 @@ export const AuthProvider = ({ children }) => {
       const { data } = await api.post("/auth/send-otp", payload);
       return data;
     } catch (error) {
-      throw error?.response?.data?.message || "Failed to send OTP";
+      if (error?.response?.data?.message) {
+        throw error.response.data.message;
+      }
+
+      const debugInfo = getApiDebugInfo();
+      const activeBaseUrl = debugInfo?.activeBaseUrl || "unknown";
+      throw `Failed to send OTP. Unable to reach backend at ${activeBaseUrl}. Check that backend is running and EXPO_PUBLIC_API_URL in mobile/.env points to your current LAN IP.`;
     }
   };
 
@@ -162,7 +168,13 @@ export const AuthProvider = ({ children }) => {
       );
       return data;
     } catch (error) {
-      throw error?.response?.data?.message || "Failed to send reset OTP";
+      if (error?.response?.data?.message) {
+        throw error.response.data.message;
+      }
+
+      const debugInfo = getApiDebugInfo();
+      const activeBaseUrl = debugInfo?.activeBaseUrl || "unknown";
+      throw `Failed to send reset OTP. Unable to reach backend at ${activeBaseUrl}. Check that backend is running and EXPO_PUBLIC_API_URL in mobile/.env points to your current LAN IP.`;
     }
   };
 

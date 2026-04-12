@@ -20,6 +20,7 @@ const {
   deleteMyAccount,
   sendDeleteAccountOtp,
   confirmDeleteMyAccount,
+  checkSmtpHealth,
 } = require("../controllers/authController");
 const { protect } = require("../middlewares/auth");
 const {
@@ -49,10 +50,10 @@ const loginLimiter = createRateLimiter({
     }`,
 });
 
-const otpLimiter = createRateLimiter({
+const otpSendLimiter = createRateLimiter({
   windowMs: 10 * 60 * 1000,
-  max: 5,
-  message: "Too many OTP requests. Please try again later.",
+  max: 20,
+  message: "Too many OTP send attempts. Please try again later.",
   keyGenerator: (req) =>
     `${req.ip || "unknown"}:${
       String(req.body?.email || "")
@@ -61,36 +62,48 @@ const otpLimiter = createRateLimiter({
     }`,
 });
 
+const otpVerifyLimiter = createRateLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: "Too many OTP verification attempts. Please try again later.",
+  keyGenerator: (req) =>
+    `${req.ip || "unknown"}:${
+      String(req.body?.email || req.body?.twoFactorSessionId || "")
+        .trim()
+        .toLowerCase() || "otp-verify"
+    }`,
+});
+
 router.post("/register", validateRegisterRequest, registerUser);
-router.post("/send-otp", otpLimiter, validateEmailBody, sendRegisterOtp);
+router.post("/send-otp", otpSendLimiter, validateEmailBody, sendRegisterOtp);
 router.post(
   "/verify-otp",
-  otpLimiter,
+  otpVerifyLimiter,
   validateRegisterRequest,
   registerWithOtp,
 );
 router.post(
   "/forgot-password/send-otp",
-  otpLimiter,
+  otpSendLimiter,
   validateEmailBody,
   sendForgotPasswordOtp,
 );
 router.post(
   "/forgot-password/reset",
-  otpLimiter,
+  otpVerifyLimiter,
   validateResetPasswordRequest,
   resetPasswordWithOtp,
 );
 router.post("/login", loginLimiter, validateLoginRequest, loginUser);
 router.post(
   "/login/2fa/verify",
-  otpLimiter,
+  otpVerifyLimiter,
   validateLoginTwoFactorVerifyRequest,
   verifyLoginTwoFactorOtp,
 );
 router.post(
   "/login/2fa/resend",
-  otpLimiter,
+  otpSendLimiter,
   validateLoginTwoFactorResendRequest,
   resendLoginTwoFactorOtp,
 );
@@ -122,6 +135,7 @@ router.delete(
   deletePaymentMethod,
 );
 router.post("/me/delete/send-otp", protect, sendDeleteAccountOtp);
+router.post("/smtp/diagnostics", checkSmtpHealth);
 router.post(
   "/me/delete/confirm",
   protect,

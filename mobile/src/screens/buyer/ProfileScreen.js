@@ -452,7 +452,7 @@ const ProfileScreen = ({ navigation }) => {
             <MenuItem
               icon="shield-checkmark-outline"
               label="Privacy & Security"
-              onPress={() => navigation.navigate("Info", { type: "privacy" })}
+              onPress={() => navigation.navigate("PrivacyPolicy")}
               trailing={
                 <Ionicons
                   name="chevron-forward"
@@ -465,7 +465,7 @@ const ProfileScreen = ({ navigation }) => {
             <MenuItem
               icon="document-text-outline"
               label="Terms & Conditions"
-              onPress={() => navigation.navigate("Info", { type: "terms" })}
+              onPress={() => navigation.navigate("Terms")}
               trailing={
                 <Ionicons
                   name="chevron-forward"
@@ -478,7 +478,7 @@ const ProfileScreen = ({ navigation }) => {
             <MenuItem
               icon="help-circle-outline"
               label="Help Center"
-              onPress={() => navigation.navigate("Info", { type: "help" })}
+              onPress={() => navigation.navigate("HelpCenter")}
               trailing={
                 <Ionicons
                   name="chevron-forward"
@@ -492,6 +492,19 @@ const ProfileScreen = ({ navigation }) => {
           {/* Payment & Billing */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Payment & Billing</Text>
+
+            <MenuItem
+              icon="alert-circle-outline"
+              label="Refund Disputes"
+              onPress={() => navigation.navigate("Refunds")}
+              trailing={
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              }
+            />
 
             <MenuItem
               icon="card-outline"
