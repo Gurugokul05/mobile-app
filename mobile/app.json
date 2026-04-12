@@ -22,7 +22,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/Roots logo.png"
       },
-      "package": "com.anonymous.mobile"
+      "package": "com.roots.marketplace"
     },
     "web": {
       "favicon": "./assets/favicon.png"
