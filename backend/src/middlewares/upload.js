@@ -9,16 +9,19 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const cloudinaryEnabled =
-  String(process.env.USE_CLOUDINARY || "")
-    .trim()
-    .toLowerCase() === "true";
-
 const hasCloudinaryConfig = Boolean(
   process.env.CLOUDINARY_CLOUD_NAME &&
   process.env.CLOUDINARY_API_KEY &&
   process.env.CLOUDINARY_API_SECRET,
 );
+
+const cloudinaryFlag = String(process.env.USE_CLOUDINARY || "")
+  .trim()
+  .toLowerCase();
+
+const cloudinaryEnabled =
+  cloudinaryFlag === "true" ||
+  (cloudinaryFlag !== "false" && hasCloudinaryConfig);
 
 const storage =
   cloudinaryEnabled && hasCloudinaryConfig

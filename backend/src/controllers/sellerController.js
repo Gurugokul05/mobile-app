@@ -90,6 +90,21 @@ const toPublicDocUrl = (req, file) => {
   return toStoredUploadUrl(file);
 };
 
+const normalizeOrderMedia = (req, order) => ({
+  ...order,
+  packingProofUrl: toPublicMediaUrl(req, order?.packingProofUrl),
+  paymentDetails: {
+    ...(order?.paymentDetails || {}),
+    proof: {
+      ...(order?.paymentDetails?.proof || {}),
+      screenshotUrl: toPublicMediaUrl(
+        req,
+        order?.paymentDetails?.proof?.screenshotUrl,
+      ),
+    },
+  },
+});
+
 // @desc    Upload seller verification documents
 // @route   POST /api/seller/verify
 // @access  Private (Seller)
@@ -331,7 +346,7 @@ exports.getMySellerOrders = async (req, res) => {
       .populate("buyerId", "name email")
       .sort({ createdAt: -1 });
 
-    res.json(orders);
+    res.json(orders.map((order) => normalizeOrderMedia(req, order.toObject())));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
