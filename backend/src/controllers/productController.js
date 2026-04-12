@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const User = require("../models/User");
+const Order = require("../models/Order");
+const { toStoredUploadUrl } = require("../utils/media");
 
 const getDefaultDescription = (product) =>
   `Authentic ${product?.name || "product"} from ${product?.originPlace || "its place of origin"}. Crafted by local sellers and quality-checked.`;
@@ -127,23 +129,47 @@ exports.createProduct = async (req, res) => {
       });
     }
 
-    const imageUrls = (req.files || [])
-      .map((file) => {
-        if (file?.path && /^https?:\/\//i.test(file.path)) {
-          return file.path;
-        }
-        if (file?.secure_url) {
-          return file.secure_url;
-        }
-        if (file?.url && /^https?:\/\//i.test(file.url)) {
-          return file.url;
-        }
-        if (file?.filename) {
-          return `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-        }
-        return null;
-      })
-      .filter(Boolean);
+    const seller = await User.findById(req.user._id).select(
+      "sellerPayment role isVerified complianceDocs",
+    );
+
+    const onboardingApproved = Boolean(seller?.isVerified);
+    const gstVerified =
+      String(seller?.complianceDocs?.gstCertificate?.status || "")
+        .trim()
+        .toLowerCase() === "verified";
+    const businessLicenseVerified =
+      String(seller?.complianceDocs?.businessLicense?.status || "")
+        .trim()
+        .toLowerCase() === "verified";
+
+    const missingApprovals = [];
+    if (!onboardingApproved) {
+      missingApprovals.push("seller onboarding verification");
+    }
+    if (!gstVerified) {
+      missingApprovals.push("GST verification");
+    }
+    if (!businessLicenseVerified) {
+      missingApprovals.push("business license verification");
+    }
+
+    if (missingApprovals.length > 0) {
+      return res.status(403).json({
+        message: `Product upload is blocked until these are approved: ${missingApprovals.join(", ")}.`,
+        missingApprovals,
+      });
+    }
+
+    const sellerUpiId = String(seller?.sellerPayment?.upiId || "").trim();
+    if (!sellerUpiId) {
+      return res.status(400).json({
+        message:
+          "UPI ID setup is mandatory before listing products. Update your seller profile with a valid UPI ID.",
+      });
+    }
+
+    const imageUrls = (req.files || []).map(toStoredUploadUrl).filter(Boolean);
 
     const product = new Product({
       name,
@@ -209,21 +235,7 @@ exports.updateProduct = async (req, res) => {
     // Update images if new ones are provided
     if (req.files && req.files.length > 0) {
       const imageUrls = (req.files || [])
-        .map((file) => {
-          if (file?.path && /^https?:\/\//i.test(file.path)) {
-            return file.path;
-          }
-          if (file?.secure_url) {
-            return file.secure_url;
-          }
-          if (file?.url && /^https?:\/\//i.test(file.url)) {
-            return file.url;
-          }
-          if (file?.filename) {
-            return `${req.protocol}://${req.get("host")}/uploads/${file.filename}`;
-          }
-          return null;
-        })
+        .map(toStoredUploadUrl)
         .filter(Boolean);
 
       // Append new images to existing ones (or replace if all new)
@@ -258,6 +270,12 @@ exports.addProductReview = async (req, res) => {
       return res.status(400).json({ message: "Invalid product id" });
     }
 
+    if (req.user.role !== "buyer") {
+      return res
+        .status(403)
+        .json({ message: "Only buyers can submit product reviews" });
+    }
+
     const { rating, comment } = req.body;
     const numericRating = Number(rating);
 
@@ -274,6 +292,19 @@ exports.addProductReview = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
+    }
+
+    const deliveredOrder = await Order.findOne({
+      buyerId: req.user._id,
+      productId: product._id,
+      status: "Delivered",
+    }).select("_id status");
+
+    if (!deliveredOrder) {
+      return res.status(403).json({
+        message:
+          "You can review this product only after your order is delivered.",
+      });
     }
 
     const existingReview = product.reviews.find(

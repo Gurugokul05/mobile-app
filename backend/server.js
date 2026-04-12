@@ -8,14 +8,27 @@ const path = require("path");
 const connectDB = require("./src/config/db");
 const seedDatabase = require("./seeds/seedData");
 
+const isProduction = process.env.NODE_ENV === "production";
+const corsAllowList = String(process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+
 // Connect to MongoDB
 connectDB().catch((err) => {
   console.error("Failed to connect to MongoDB:", err.message);
   process.exit(1);
 });
 
-// Seed database with initial data
-seedDatabase().catch((err) => console.error("Seeding error:", err));
+// Seed data only when explicitly enabled (default: disabled)
+const shouldSeedOnStartup =
+  String(process.env.SEED_ON_STARTUP || "false")
+    .trim()
+    .toLowerCase() === "true";
+
+if (shouldSeedOnStartup) {
+  seedDatabase().catch((err) => console.error("Seeding error:", err));
+}
 
 const app = express();
 
@@ -25,29 +38,29 @@ app.set("trust proxy", 1);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// CORS Configuration - Allow all origins for development
+// CORS Configuration
 app.use(
   cors({
-    origin: "*",
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (!isProduction) {
+        return callback(null, true);
+      }
+
+      if (corsAllowList.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origin not allowed by CORS"));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
-
-// Explicit CORS headers
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  );
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
 
 app.use(
   helmet({

@@ -4,6 +4,7 @@ const Order = require("../models/Order");
 const RefundRequest = require("../models/RefundRequest");
 const SellerVerification = require("../models/SellerVerification");
 const { createRevenueInsightsPdf } = require("../utils/revenueInsightsPdf");
+const { toStoredUploadUrl, toPublicMediaUrl } = require("../utils/media");
 
 const normalizeComplianceDocs = (docs) => ({
   gstCertificate: {
@@ -22,20 +23,71 @@ const normalizeComplianceDocs = (docs) => ({
   },
 });
 
+const mapSellerVerificationStatus = ({ seller, verification }) => {
+  if (seller?.isVerified) {
+    return {
+      status: "approved",
+      label: "Approved",
+      message:
+        "Your verification is approved. You can continue selling without submitting again.",
+      canResubmit: false,
+    };
+  }
+
+  const latestStatus = String(verification?.status || "")
+    .trim()
+    .toLowerCase();
+
+  if (latestStatus === "pending") {
+    return {
+      status: "pending",
+      label: "Submitted - Under Review",
+      message:
+        "Your verification documents have been submitted and are being reviewed by our team.",
+      canResubmit: false,
+    };
+  }
+
+  if (latestStatus === "rejected") {
+    return {
+      status: "rejected",
+      label: "Needs Changes",
+      message:
+        "Your previous submission was not approved. Please update documents and submit again.",
+      canResubmit: true,
+    };
+  }
+
+  const hasLegacyDocs = Boolean(
+    seller?.verificationDocs?.idProofUrl ||
+    seller?.verificationDocs?.locationProofUrl ||
+    seller?.verificationDocs?.makingProofUrl,
+  );
+
+  if (hasLegacyDocs) {
+    return {
+      status: "pending",
+      label: "Submitted - Under Review",
+      message:
+        "Your verification documents have already been submitted and are waiting for review.",
+      canResubmit: false,
+    };
+  }
+
+  return {
+    status: "not_submitted",
+    label: "Not Submitted",
+    message: "Submit your verification documents to start the review process.",
+    canResubmit: true,
+  };
+};
+
 const toPublicDocUrl = (req, file) => {
   if (!file) {
     return "";
   }
 
-  if (file.path) {
-    return String(file.path).replace(/\\/g, "/");
-  }
-
-  if (file.filename) {
-    return `/uploads/${file.filename}`;
-  }
-
-  return "";
+  return toStoredUploadUrl(file);
 };
 
 // @desc    Upload seller verification documents
@@ -47,6 +99,17 @@ exports.uploadVerificationDocs = async (req, res) => {
 
     if (user.role !== "seller") {
       return res.status(400).json({ message: "User is not a seller" });
+    }
+
+    const latestVerification = await SellerVerification.findOne({
+      sellerId: user._id,
+    }).sort({ submittedAt: -1 });
+
+    if (latestVerification?.status === "pending") {
+      return res.status(409).json({
+        message:
+          "Your verification is already submitted and under review. Please wait for approval or rejection before uploading again.",
+      });
     }
 
     if (
@@ -61,28 +124,88 @@ exports.uploadVerificationDocs = async (req, res) => {
       });
     }
 
-    user.verificationDocs = {
+    const docs = {
       idProofUrl: req.files.idProof
-        ? req.files.idProof[0].path
+        ? toStoredUploadUrl(req.files.idProof[0])
         : user.verificationDocs?.idProofUrl,
       locationProofUrl: req.files.locationProof
-        ? req.files.locationProof[0].path
+        ? toStoredUploadUrl(req.files.locationProof[0])
         : user.verificationDocs?.locationProofUrl,
       makingProofUrl: req.files.makingProof
-        ? req.files.makingProof[0].path
+        ? toStoredUploadUrl(req.files.makingProof[0])
         : user.verificationDocs?.makingProofUrl,
     };
 
+    user.verificationDocs = docs;
+
     user.isVerified = false; // Pending admin approval
 
-    await user.save();
+    await Promise.all([
+      user.save(),
+      SellerVerification.create({
+        sellerId: user._id,
+        sellerName: user.name || "",
+        sellerEmail: user.email || "",
+        sellerPhone: user.phone || "",
+        sellerLocation: user.location || "",
+        sellerAddress: user.address || "",
+        documents: docs,
+        status: "pending",
+        submittedAt: new Date(),
+      }),
+    ]);
 
     res.json({
       message: "Verification documents uploaded successfully",
-      docs: user.verificationDocs,
+      docs,
+      status: "pending",
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get seller verification submission status
+// @route   GET /api/seller/me/verification-status
+// @access  Private/Seller
+exports.getMySellerVerificationStatus = async (req, res) => {
+  try {
+    if (req.user.role !== "seller") {
+      return res
+        .status(403)
+        .json({ message: "Only sellers can access this endpoint" });
+    }
+
+    const seller = await User.findById(req.user._id).select(
+      "isVerified verificationDocs",
+    );
+
+    if (!seller) {
+      return res.status(404).json({ message: "Seller not found" });
+    }
+
+    const verification = await SellerVerification.findOne({
+      sellerId: req.user._id,
+    })
+      .sort({ submittedAt: -1 })
+      .select("status submittedAt reviewedAt rejectionReason adminComments");
+
+    const mapped = mapSellerVerificationStatus({
+      seller,
+      verification,
+    });
+
+    return res.json({
+      ...mapped,
+      isVerified: Boolean(seller.isVerified),
+      submittedAt: verification?.submittedAt || null,
+      reviewedAt: verification?.reviewedAt || null,
+      rejectionReason: verification?.rejectionReason || "",
+      adminComments: verification?.adminComments || "",
+      verification: verification || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -91,7 +214,7 @@ exports.uploadVerificationDocs = async (req, res) => {
 // @access  Private/Admin
 exports.verifySeller = async (req, res) => {
   try {
-    const { status } = req.body; // 'approved' or 'rejected'
+    const { status, adminComments, rejectionReason } = req.body; // 'approved' or 'rejected'
     const seller = await User.findById(req.params.id);
 
     if (!seller || seller.role !== "seller") {
@@ -102,6 +225,20 @@ exports.verifySeller = async (req, res) => {
       seller.isVerified = true;
     } else {
       seller.isVerified = false;
+    }
+
+    const latestVerification = await SellerVerification.findOne({
+      sellerId: seller._id,
+    }).sort({ submittedAt: -1 });
+
+    if (latestVerification) {
+      latestVerification.status = status;
+      latestVerification.reviewedAt = new Date();
+      latestVerification.reviewedBy = req.user._id;
+      latestVerification.adminComments = adminComments || "";
+      latestVerification.rejectionReason =
+        status === "rejected" ? rejectionReason || "" : "";
+      await latestVerification.save();
     }
 
     await seller.save();
@@ -134,7 +271,9 @@ exports.getMySellerStats = async (req, res) => {
           {
             $match: {
               sellerId: req.user._id,
-              "paymentDetails.status": "Completed",
+              "paymentDetails.status": {
+                $in: ["Completed", "Payment Verified"],
+              },
             },
           },
           { $group: { _id: null, totalRevenue: { $sum: "$totalPrice" } } },
@@ -213,7 +352,7 @@ exports.getMySellerRevenue = async (req, res) => {
       {
         $match: {
           sellerId: req.user._id,
-          "paymentDetails.status": "Completed",
+          "paymentDetails.status": { $in: ["Completed", "Payment Verified"] },
         },
       },
       {
@@ -283,7 +422,7 @@ exports.getAllSellersForAdmin = async (_req, res) => {
 // @desc    Get all seller verification requests
 // @route   GET /api/seller/admin/all-verifications
 // @access  Private/Admin
-exports.getAllVerifications = async (_req, res) => {
+exports.getAllVerifications = async (req, res) => {
   try {
     const rows = await SellerVerification.find({})
       .populate("sellerId", "name email isVerified trustScore")
@@ -291,7 +430,77 @@ exports.getAllVerifications = async (_req, res) => {
       .sort({ submittedAt: -1 })
       .lean();
 
-    return res.json(rows);
+    const sellersWithDocs = await User.find({
+      role: "seller",
+      $or: [
+        { "verificationDocs.idProofUrl": { $exists: true, $ne: "" } },
+        { "verificationDocs.locationProofUrl": { $exists: true, $ne: "" } },
+        { "verificationDocs.makingProofUrl": { $exists: true, $ne: "" } },
+      ],
+    })
+      .select(
+        "name email phone location address trustScore isVerified verificationDocs createdAt",
+      )
+      .lean();
+
+    const existingSellerIds = new Set(
+      rows
+        .map((row) =>
+          typeof row?.sellerId === "object" && row?.sellerId?._id
+            ? String(row.sellerId._id)
+            : String(row?.sellerId || ""),
+        )
+        .filter(Boolean),
+    );
+
+    const legacyRows = sellersWithDocs
+      .filter((seller) => !existingSellerIds.has(String(seller._id)))
+      .map((seller) => ({
+        _id: `legacy-${String(seller._id)}`,
+        sellerId: {
+          _id: seller._id,
+          name: seller.name || "",
+          email: seller.email || "",
+          isVerified: Boolean(seller.isVerified),
+          trustScore: seller.trustScore || 0,
+        },
+        sellerName: seller.name || "",
+        sellerEmail: seller.email || "",
+        sellerPhone: seller.phone || "",
+        sellerLocation: seller.location || "",
+        sellerAddress: seller.address || "",
+        documents: {
+          idProofUrl: seller.verificationDocs?.idProofUrl || "",
+          locationProofUrl: seller.verificationDocs?.locationProofUrl || "",
+          makingProofUrl: seller.verificationDocs?.makingProofUrl || "",
+        },
+        status: seller.isVerified ? "approved" : "pending",
+        submittedAt: seller.createdAt || new Date(),
+        reviewedAt: null,
+        reviewedBy: null,
+        adminComments: "",
+        rejectionReason: "",
+      }));
+
+    const allRows = [...rows, ...legacyRows].sort(
+      (a, b) =>
+        new Date(b?.submittedAt || 0).getTime() -
+        new Date(a?.submittedAt || 0).getTime(),
+    );
+
+    const normalized = allRows.map((row) => ({
+      ...row,
+      documents: {
+        idProofUrl: toPublicMediaUrl(req, row?.documents?.idProofUrl),
+        locationProofUrl: toPublicMediaUrl(
+          req,
+          row?.documents?.locationProofUrl,
+        ),
+        makingProofUrl: toPublicMediaUrl(req, row?.documents?.makingProofUrl),
+      },
+    }));
+
+    return res.json(normalized);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -303,16 +512,41 @@ exports.getAllVerifications = async (_req, res) => {
 exports.getAllComplianceVerificationsForAdmin = async (_req, res) => {
   try {
     const sellers = await User.find({ role: "seller" })
-      .select("name email isVerified trustScore complianceDocs createdAt")
+      .select(
+        "name email phone location address isVerified trustScore complianceDocs createdAt",
+      )
       .sort({ createdAt: -1 })
       .lean();
 
     const data = sellers.map((seller) => ({
       ...seller,
+      sellerId: seller._id,
+      sellerName: seller.name || "",
+      sellerEmail: seller.email || "",
+      sellerPhone: seller.phone || "",
+      sellerLocation: seller.location || seller.address || "",
+      sellerJoinedAt: seller.createdAt || null,
       complianceDocs: normalizeComplianceDocs(seller.complianceDocs),
     }));
 
-    return res.json(data);
+    const normalized = data.map((seller) => ({
+      ...seller,
+      complianceDocs: {
+        gstCertificate: {
+          ...seller.complianceDocs.gstCertificate,
+          url: toPublicMediaUrl(_req, seller.complianceDocs.gstCertificate.url),
+        },
+        businessLicense: {
+          ...seller.complianceDocs.businessLicense,
+          url: toPublicMediaUrl(
+            _req,
+            seller.complianceDocs.businessLicense.url,
+          ),
+        },
+      },
+    }));
+
+    return res.json(normalized);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -339,12 +573,32 @@ exports.getSellerVerificationDetails = async (req, res) => {
       return res.status(404).json({ message: "Seller not found" });
     }
 
+    const normalizedVerification = verification
+      ? {
+          ...verification,
+          documents: {
+            idProofUrl: toPublicMediaUrl(
+              req,
+              verification?.documents?.idProofUrl,
+            ),
+            locationProofUrl: toPublicMediaUrl(
+              req,
+              verification?.documents?.locationProofUrl,
+            ),
+            makingProofUrl: toPublicMediaUrl(
+              req,
+              verification?.documents?.makingProofUrl,
+            ),
+          },
+        }
+      : null;
+
     return res.json({
       seller: {
         ...seller,
         complianceDocs: normalizeComplianceDocs(seller.complianceDocs),
       },
-      verification: verification || null,
+      verification: normalizedVerification,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -545,7 +799,7 @@ exports.getMySellerTransactions = async (req, res) => {
 
     const transactions = await Order.find({
       sellerId: req.user._id,
-      "paymentDetails.status": "Completed",
+      "paymentDetails.status": { $in: ["Completed", "Payment Verified"] },
     })
       .populate("buyerId", "name email")
       .populate("productId", "name")
@@ -570,7 +824,7 @@ exports.getMySellerSecurity = async (req, res) => {
     }
 
     const seller = await User.findById(req.user._id)
-      .select("twoFactorEnabled lastLoginAt loginActivity")
+      .select("twoFactorEnabled lastLoginAt loginActivity createdAt")
       .lean();
 
     if (!seller) {
@@ -580,7 +834,8 @@ exports.getMySellerSecurity = async (req, res) => {
     return res.json({
       twoFactorEnabled: !!seller.twoFactorEnabled,
       lastLoginAt: seller.lastLoginAt || null,
-      loginActivity: (seller.loginActivity || []).slice(-20).reverse(),
+      createdAt: seller.createdAt || null,
+      loginActivity: (seller.loginActivity || []).slice(0, 20),
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -631,7 +886,9 @@ exports.getDetailedRevenueInsights = async (req, res) => {
           {
             $match: {
               sellerId: req.user._id,
-              "paymentDetails.status": "Completed",
+              "paymentDetails.status": {
+                $in: ["Completed", "Payment Verified"],
+              },
             },
           },
           {
@@ -646,7 +903,9 @@ exports.getDetailedRevenueInsights = async (req, res) => {
           {
             $match: {
               sellerId: req.user._id,
-              "paymentDetails.status": "Completed",
+              "paymentDetails.status": {
+                $in: ["Completed", "Payment Verified"],
+              },
             },
           },
           {
@@ -665,7 +924,9 @@ exports.getDetailedRevenueInsights = async (req, res) => {
           {
             $match: {
               sellerId: req.user._id,
-              "paymentDetails.status": "Completed",
+              "paymentDetails.status": {
+                $in: ["Completed", "Payment Verified"],
+              },
               createdAt: {
                 $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
               },
@@ -688,7 +949,9 @@ exports.getDetailedRevenueInsights = async (req, res) => {
           {
             $match: {
               sellerId: req.user._id,
-              "paymentDetails.status": "Completed",
+              "paymentDetails.status": {
+                $in: ["Completed", "Payment Verified"],
+              },
             },
           },
           {
@@ -762,7 +1025,7 @@ exports.downloadRevenueInsightsPDF = async (req, res) => {
         .lean(),
       Order.find({
         sellerId: req.user._id,
-        "paymentDetails.status": "Completed",
+        "paymentDetails.status": { $in: ["Completed", "Payment Verified"] },
       })
         .select("totalPrice status createdAt productId")
         .lean(),
@@ -770,7 +1033,7 @@ exports.downloadRevenueInsightsPDF = async (req, res) => {
         {
           $match: {
             sellerId: req.user._id,
-            "paymentDetails.status": "Completed",
+            "paymentDetails.status": { $in: ["Completed", "Payment Verified"] },
           },
         },
         {

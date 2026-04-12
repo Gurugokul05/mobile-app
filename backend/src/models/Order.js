@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
 
 const OrderSchema = new mongoose.Schema({
+  orderReference: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+  },
   buyerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
@@ -26,10 +32,45 @@ const OrderSchema = new mongoose.Schema({
   paymentDetails: {
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
+    method: {
+      type: String,
+      enum: ["Razorpay", "UPIManual"],
+      default: "Razorpay",
+    },
     status: {
       type: String,
-      enum: ["Pending", "Completed", "Failed"],
+      enum: [
+        "Pending",
+        "Completed",
+        "Failed",
+        "Pending Payment",
+        "Payment Submitted",
+        "Payment Verified",
+        "Payment Failed",
+        "Payment Expired",
+      ],
       default: "Pending",
+    },
+    sellerUpiId: { type: String },
+    sellerName: { type: String },
+    expiresAt: { type: Date },
+    submittedAt: { type: Date },
+    verifiedAt: { type: Date },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    verificationNote: { type: String },
+    lockedAmount: {
+      subtotal: { type: Number, default: 0 },
+      taxAmount: { type: Number, default: 0 },
+      deliveryFee: { type: Number, default: 0 },
+      grandTotal: { type: Number, default: 0 },
+      currency: { type: String, default: "INR" },
+    },
+    proof: {
+      screenshotUrl: { type: String },
+      claimedTransactionId: { type: String },
     },
   },
   packingProofUrl: { type: String }, // Provided by seller

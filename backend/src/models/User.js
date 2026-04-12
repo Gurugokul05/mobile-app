@@ -24,6 +24,18 @@ const UserSchema = new mongoose.Schema({
       isDefault: { type: Boolean, default: false },
     },
   ],
+  sellerPayment: {
+    upiId: { type: String, default: "" },
+    upiIdLastUpdatedAt: { type: Date },
+    upiIdChangeLog: [
+      {
+        previousValue: { type: String, default: "" },
+        nextValue: { type: String, default: "" },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
+  },
   role: { type: String, enum: ["buyer", "seller", "admin"], default: "buyer" },
   isVerified: { type: Boolean, default: false }, // For sellers mainly
   verificationDocs: {

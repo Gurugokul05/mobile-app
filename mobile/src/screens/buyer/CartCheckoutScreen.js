@@ -1,39 +1,32 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  Alert,
-  ActivityIndicator,
   FlatList,
   Image,
   ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../theme/colors";
-import Button from "../../components/Button";
 import api from "../../api/config";
 import { useCart } from "../../context/CartContext";
 import { useAppAlert } from "../../context/AlertContext";
-import { Ionicons } from "@expo/vector-icons";
 import ScreenSurface from "../../components/ScreenSurface";
+import Button from "../../components/Button";
 
-let RazorpayCheckout = null;
-try {
-  RazorpayCheckout = require("react-native-razorpay");
-} catch (_err) {
-  RazorpayCheckout = null;
-}
+const STEPS = ["Cart", "Address", "Payment", "Confirm"];
 
 const CartCheckoutScreen = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const { cartItems, cartTotal, removeFromCart, clearCart } = useCart();
   const { showAlert } = useAppAlert();
 
-  // Optional: If "Buy Now" provides a direct product, we mock it as a 1-item cart
-  const directProduct = route.params?.product;
+  const directProduct = route?.params?.product;
   const isDirectCheckout = !!directProduct;
 
   const activeCartItems = isDirectCheckout
@@ -41,126 +34,76 @@ const CartCheckoutScreen = ({ route, navigation }) => {
     : cartItems;
 
   const activeTotal = isDirectCheckout
-    ? typeof directProduct.price === "string"
-      ? parseFloat(directProduct.price.replace(/,/g, ""))
-      : directProduct.price
+    ? Number(String(directProduct?.price || 0).replace(/,/g, ""))
     : cartTotal;
 
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const estimatedDelivery = useMemo(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 5);
+    return date.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }, []);
+
+  const currentStep = city && address ? 2 : 1;
+
+  const validate = () => {
+    const next = {};
+    if (!address.trim()) next.address = "Street address is required";
+    if (!city.trim()) next.city = "City is required";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
   const handleCheckout = async () => {
     if (activeCartItems.length === 0) {
       showAlert({
         title: "Empty Cart",
-        message: "Please add items to your cart first.",
+        message: "Please add items first",
         type: "warning",
       });
       return;
     }
-    if (!address || !city) {
-      showAlert({
-        title: "Error",
-        message: "Please enter full shipping address",
-        type: "error",
-      });
-      return;
-    }
+
+    if (!validate()) return;
 
     setLoading(true);
     try {
-      // Create order for the first item (MOCK logic expects 1 product normally, we will just send the first)
-      const mockProductId = activeCartItems[0]._id;
-      const quantity = activeCartItems[0].quantity || 1;
-
-      const orderPayload = {
-        productId: mockProductId,
-        quantity: quantity,
+      const first = activeCartItems[0];
+      const payload = {
+        productId: first._id,
+        quantity: first.quantity || 1,
         shippingAddress: {
-          street: address,
-          city: city,
+          street: address.trim(),
+          city: city.trim(),
           state: "State",
           pincode: "000000",
         },
       };
 
-      console.log("Creating order with payload:", orderPayload);
-
-      const { data } = await api.post("/orders", orderPayload);
-
-      console.log("Order created:", data);
-
-      const isTestModePayment =
-        data?.paymentMode === "test" ||
-        data?.paymentMode === "mock" ||
-        String(data?.rpOrderId || "").startsWith("mock_rp_");
-
-      if (isTestModePayment) {
-        await api.post(`/orders/${data.order._id}/verify-payment`, {
-          razorpay_order_id: data.rpOrderId,
-          razorpay_payment_id: "mock_payment_id",
-          razorpay_signature: "mock_sig",
-        });
-      } else {
-        if (!RazorpayCheckout?.open) {
-          throw new Error(
-            "Razorpay SDK is unavailable in Expo Go. Run backend in test/mock payment mode or use a development build.",
-          );
-        }
-
-        const options = {
-          description: "Payment for your Roots order",
-          image:
-            activeCartItems[0]?.images?.[0] ||
-            "https://via.placeholder.com/150",
-          currency: "INR",
-          key:
-            data?.razorpayKeyId ||
-            process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ||
-            "",
-          amount: Number(data?.amount || Math.round(activeTotal * 100)),
-          name: "Roots",
-          order_id: data?.rpOrderId,
-          theme: { color: colors.primary },
-        };
-
-        if (!options.key || !options.order_id) {
-          throw new Error(
-            "Razorpay setup is incomplete. Missing key or order id.",
-          );
-        }
-
-        const paymentResult = await RazorpayCheckout.open(options);
-
-        await api.post(`/orders/${data.order._id}/verify-payment`, {
-          razorpay_order_id: paymentResult?.razorpay_order_id,
-          razorpay_payment_id: paymentResult?.razorpay_payment_id,
-          razorpay_signature: paymentResult?.razorpay_signature,
-        });
-      }
-
+      const { data } = await api.post("/orders", payload);
       if (!isDirectCheckout) clearCart();
 
-      showAlert({
-        title: "Success",
-        message: "Payment successful! Order placed.",
-        type: "success",
-        onConfirm: () => navigation.navigate("BuyerHome"),
+      navigation.navigate("UpiPayment", {
+        orderId: data?.order?._id,
+        orderReference: data?.paymentSession?.orderReference,
+        sellerName: data?.paymentSession?.sellerName,
+        sellerUpiId: data?.paymentSession?.sellerUpiId,
+        amount: data?.paymentSession?.amount,
+        currency: data?.paymentSession?.currency || "INR",
+        expiresAt: data?.paymentSession?.expiresAt,
       });
     } catch (error) {
-      console.error("Checkout error:", {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-      });
       showAlert({
         title: "Checkout Failed",
-        message:
-          error?.description ||
-          error.response?.data?.message ||
-          error.message ||
-          "An unexpected error occurred",
+        message: error?.response?.data?.message || "Could not create order",
         type: "error",
       });
     } finally {
@@ -168,55 +111,80 @@ const CartCheckoutScreen = ({ route, navigation }) => {
     }
   };
 
+  const renderRightAction = (item) => (
+    <TouchableOpacity
+      style={styles.deleteAction}
+      onPress={() => removeFromCart(item._id)}
+    >
+      <Ionicons name="trash" size={18} color={colors.white} />
+      <Text style={styles.deleteActionText}>Delete</Text>
+    </TouchableOpacity>
+  );
+
   const renderCartItem = ({ item }) => (
-    <View style={styles.cartItemCard}>
-      <Image
-        source={{ uri: item.images?.[0] || "https://via.placeholder.com/150" }}
-        style={styles.cartItemImage}
-      />
-      <View style={styles.cartItemInfo}>
-        <Text style={styles.cartItemName} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={styles.cartItemPrice}>
-          ₹{item.price} <Text style={styles.qtyText}>x {item.quantity}</Text>
-        </Text>
+    <Swipeable
+      enabled={!isDirectCheckout}
+      renderRightActions={() => renderRightAction(item)}
+    >
+      <View style={styles.cartItemCard}>
+        <Image
+          source={{
+            uri: item.images?.[0] || "https://via.placeholder.com/150",
+          }}
+          style={styles.cartItemImage}
+        />
+        <View style={styles.cartItemInfo}>
+          <Text style={styles.cartItemName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={styles.cartItemMeta}>Qty: {item.quantity}</Text>
+          <Text style={styles.cartItemPrice}>
+            Rs {Number(item.price || 0).toLocaleString()}
+          </Text>
+        </View>
       </View>
-      {!isDirectCheckout && (
-        <TouchableOpacity
-          onPress={() => removeFromCart(item._id)}
-          style={styles.removeBtn}
-        >
-          <Ionicons name="trash-outline" size={20} color={colors.error} />
-        </TouchableOpacity>
-      )}
-    </View>
+    </Swipeable>
   );
 
   return (
     <ScreenSurface style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <Text style={styles.headerTitle}>
-            {isDirectCheckout ? "Checkout" : "Your Cart"}
+            {isDirectCheckout ? "Checkout" : "Cart & Checkout"}
           </Text>
+          <View style={styles.stepperRow}>
+            {STEPS.map((step, idx) => {
+              const stepIndex = idx + 1;
+              const active = stepIndex <= currentStep;
+              return (
+                <View key={step} style={styles.stepItem}>
+                  <View
+                    style={[styles.stepDot, active && styles.stepDotActive]}
+                  />
+                  <Text
+                    style={[styles.stepText, active && styles.stepTextActive]}
+                  >
+                    {step}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: 80 + insets.bottom },
-          ]}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingBottom: 84 + insets.bottom,
+            paddingTop: 14,
+          }}
         >
           {activeCartItems.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons
-                name="cart-outline"
-                size={64}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.emptyText}>Your cart is empty</Text>
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyArt}>:-)</Text>
+              <Text style={styles.emptyTitle}>Your cart is empty</Text>
               <Button
                 title="Start Shopping"
                 onPress={() => navigation.navigate("Home")}
@@ -224,70 +192,78 @@ const CartCheckoutScreen = ({ route, navigation }) => {
             </View>
           ) : (
             <>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Items</Text>
-              </View>
-
+              <Text style={styles.sectionTitle}>Items</Text>
               <FlatList
                 data={activeCartItems}
                 renderItem={renderCartItem}
                 keyExtractor={(item) => item._id}
                 scrollEnabled={false}
-                contentContainerStyle={styles.listContainer}
+                contentContainerStyle={{ paddingBottom: 12 }}
               />
 
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryTitle}>Order Summary</Text>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryText}>Subtotal</Text>
-                  <Text style={styles.summaryText}>
-                    ₹{activeTotal.toLocaleString()}
+                  <Text style={styles.summaryLabel}>Subtotal</Text>
+                  <Text style={styles.summaryValue}>
+                    Rs {activeTotal.toLocaleString()}
                   </Text>
                 </View>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryText}>Standard Shipping</Text>
-                  <Text style={styles.summaryText}>Free</Text>
+                  <Text style={styles.summaryLabel}>Shipping</Text>
+                  <Text style={styles.summaryValue}>Free</Text>
                 </View>
                 <View style={[styles.summaryRow, styles.totalRow]}>
-                  <Text style={styles.totalText}>Total</Text>
-                  <Text style={styles.totalAmount}>
-                    ₹{activeTotal.toLocaleString()}
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalValue}>
+                    Rs {activeTotal.toLocaleString()}
                   </Text>
                 </View>
+                <Text style={styles.deliveryEta}>
+                  Estimated delivery: {estimatedDelivery}
+                </Text>
               </View>
 
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Shipping Details</Text>
-              </View>
-
+              <Text style={styles.sectionTitle}>Shipping Address</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Full Street Address"
+                style={[styles.input, errors.address && styles.inputError]}
+                placeholder="Full street address"
+                placeholderTextColor={colors.textSecondary}
                 value={address}
-                onChangeText={setAddress}
-                placeholderTextColor={colors.textSecondary}
+                onChangeText={(value) => {
+                  setAddress(value);
+                  if (errors.address)
+                    setErrors((prev) => ({ ...prev, address: undefined }));
+                }}
               />
-              <TextInput
-                style={styles.input}
-                placeholder="City"
-                value={city}
-                onChangeText={setCity}
-                placeholderTextColor={colors.textSecondary}
-              />
+              {errors.address ? (
+                <Text style={styles.errorText}>{errors.address}</Text>
+              ) : null}
 
-              {loading ? (
-                <ActivityIndicator
-                  size="large"
-                  color={colors.primary}
-                  style={{ marginTop: 24, marginBottom: 40 }}
-                />
-              ) : (
-                <Button
-                  title={`Pay ₹${activeTotal.toLocaleString()}`}
-                  onPress={handleCheckout}
-                  style={{ marginTop: 24, marginBottom: 40 }}
-                />
-              )}
+              <TextInput
+                style={[styles.input, errors.city && styles.inputError]}
+                placeholder="City"
+                placeholderTextColor={colors.textSecondary}
+                value={city}
+                onChangeText={(value) => {
+                  setCity(value);
+                  if (errors.city)
+                    setErrors((prev) => ({ ...prev, city: undefined }));
+                }}
+              />
+              {errors.city ? (
+                <Text style={styles.errorText}>{errors.city}</Text>
+              ) : null}
+
+              <Button
+                title={
+                  loading
+                    ? "Processing..."
+                    : `Pay Rs ${activeTotal.toLocaleString()}`
+                }
+                onPress={handleCheckout}
+                disabled={loading}
+                style={{ marginTop: 16 }}
+              />
             </>
           )}
         </ScrollView>
@@ -297,151 +273,116 @@ const CartCheckoutScreen = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface },
   header: {
-    paddingTop: 14,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
     backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: colors.primary,
-    letterSpacing: -0.5,
-  },
-  scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingBottom: 12,
   },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 12,
+  headerTitle: { fontSize: 24, fontWeight: "800", color: colors.textPrimary },
+  stepperRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
-  emptyText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-    marginVertical: 16,
+  stepItem: { alignItems: "center", flex: 1 },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#C9D6E3",
+    marginBottom: 5,
   },
-  sectionHeader: {
-    marginBottom: 16,
-  },
+  stepDotActive: { backgroundColor: colors.primary },
+  stepText: { fontSize: 11, color: colors.textSecondary, fontWeight: "700" },
+  stepTextActive: { color: colors.primary },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "800",
     color: colors.textPrimary,
-  },
-  listContainer: {
-    marginBottom: 24,
+    marginBottom: 10,
   },
   cartItemCard: {
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.white,
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 12,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "rgba(232, 121, 249, 0.2)", // subtle violet hint
   },
-  cartItemImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    marginRight: 12,
-  },
-  cartItemInfo: {
-    flex: 1,
-  },
-  cartItemName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
+  cartItemImage: { width: 70, height: 70, borderRadius: 10, marginRight: 10 },
+  cartItemInfo: { flex: 1 },
+  cartItemName: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  cartItemMeta: { marginTop: 4, fontSize: 12, color: colors.textSecondary },
   cartItemPrice: {
+    marginTop: 6,
     fontSize: 15,
-    fontWeight: "bold",
+    fontWeight: "800",
     color: colors.primary,
   },
-  qtyText: {
-    color: colors.textSecondary,
-    fontWeight: "500",
+  deleteAction: {
+    width: 86,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: colors.error,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
   },
-  removeBtn: {
-    padding: 8,
-    backgroundColor: colors.errorLight,
-    borderRadius: 8,
+  deleteActionText: {
+    color: colors.white,
+    marginLeft: 5,
+    fontWeight: "700",
+    fontSize: 12,
   },
   summaryCard: {
-    backgroundColor: colors.white,
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 32,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(232, 121, 249, 0.3)",
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 12,
     marginBottom: 16,
   },
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  summaryText: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: "500",
-  },
+  summaryLabel: { color: colors.textSecondary, fontSize: 13 },
+  summaryValue: { color: colors.textPrimary, fontWeight: "700", fontSize: 13 },
   totalRow: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    paddingTop: 16,
-    marginTop: 4,
-    marginBottom: 0,
+    paddingTop: 8,
+    marginTop: 2,
   },
-  totalText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: colors.textPrimary,
-  },
-  totalAmount: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: colors.primary,
-  },
+  totalLabel: { color: colors.textPrimary, fontWeight: "800" },
+  totalValue: { color: colors.primary, fontWeight: "800" },
+  deliveryEta: { marginTop: 6, fontSize: 12, color: colors.textSecondary },
   input: {
-    backgroundColor: colors.white,
+    minHeight: 48,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: colors.white,
+    color: colors.textPrimary,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+  },
+  inputError: { borderColor: colors.error },
+  errorText: { color: colors.error, fontSize: 12, marginBottom: 10 },
+  emptyWrap: { alignItems: "center", paddingTop: 14 },
+  emptyArt: { fontSize: 40 },
+  emptyTitle: {
+    marginTop: 8,
+    marginBottom: 6,
     fontSize: 16,
+    fontWeight: "700",
     color: colors.textPrimary,
   },
 });

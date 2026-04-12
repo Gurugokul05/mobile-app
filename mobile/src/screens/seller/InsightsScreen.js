@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
@@ -16,6 +15,7 @@ import api from "../../api/config";
 import { colors } from "../../theme/colors";
 import ScreenSurface from "../../components/ScreenSurface";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppAlert } from "../../context/AlertContext";
 
 const maxOrOne = (arr) => {
   const max = Math.max(...arr, 0);
@@ -28,6 +28,7 @@ const InsightsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const insets = useSafeAreaInsets();
+  const { showAlert } = useAppAlert();
 
   const fetchInsights = async () => {
     try {
@@ -69,18 +70,24 @@ const InsightsScreen = ({ navigation }) => {
           dialogTitle: "Share Revenue Insights",
         });
       } else {
-        Alert.alert("Success", "PDF downloaded to your device");
+        showAlert({
+          title: "Success",
+          message: "PDF downloaded to your device",
+          type: "success",
+        });
       }
     } catch (error) {
       console.error(
         "PDF download error:",
         error?.response?.data || error?.message || error,
       );
-      Alert.alert(
-        "Error",
-        error?.response?.data?.message ||
+      showAlert({
+        title: "Error",
+        message:
+          error?.response?.data?.message ||
           "Failed to download PDF. Please try again.",
-      );
+        type: "error",
+      });
     } finally {
       setDownloading(false);
     }

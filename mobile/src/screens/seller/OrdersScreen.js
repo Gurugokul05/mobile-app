@@ -97,6 +97,8 @@ const OrdersScreen = ({ navigation }) => {
 
   const renderItem = ({ item }) => {
     const status = normalizeOrderStatus(item.status);
+    const paymentStatus = item?.paymentDetails?.status || "Pending";
+    const hasPaymentProof = Boolean(item?.paymentDetails?.proof?.screenshotUrl);
 
     return (
       <View style={styles.card}>
@@ -120,6 +122,7 @@ const OrdersScreen = ({ navigation }) => {
         </Text>
         <Text style={styles.meta}>Buyer: {item.buyerId?.name || "N/A"}</Text>
         <Text style={styles.meta}>Qty: {item.quantity || 1}</Text>
+        <Text style={styles.meta}>Payment: {paymentStatus}</Text>
         <Text style={styles.total}>
           ₹{(item.totalPrice || 0).toLocaleString()}
         </Text>
@@ -132,11 +135,36 @@ const OrdersScreen = ({ navigation }) => {
         >
           <Text style={styles.detailsButtonText}>View Details</Text>
         </TouchableOpacity>
+
+        {hasPaymentProof ? (
+          <TouchableOpacity
+            style={styles.proofButton}
+            onPress={() =>
+              navigation.navigate("SellerOrderDetail", { orderId: item._id })
+            }
+          >
+            <Ionicons name="image-outline" size={14} color={colors.white} />
+            <Text style={styles.proofButtonText}>View Payment Proof</Text>
+          </TouchableOpacity>
+        ) : paymentStatus === "Payment Submitted" ? (
+          <TouchableOpacity
+            style={styles.proofButton}
+            onPress={() =>
+              navigation.navigate("SellerOrderDetail", { orderId: item._id })
+            }
+          >
+            <Ionicons name="time-outline" size={14} color={colors.white} />
+            <Text style={styles.proofButtonText}>Review Submitted Proof</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   };
 
   const renderPendingOrder = ({ item }) => {
+    const paymentStatus = item?.paymentDetails?.status || "Pending";
+    const hasPaymentProof = Boolean(item?.paymentDetails?.proof?.screenshotUrl);
+    const isPaymentSubmitted = paymentStatus === "Payment Submitted";
     const isAcceptLoading = actionLoading === `${item._id}:accept`;
     const isRejectLoading = actionLoading === `${item._id}:reject`;
     const pendingActionLoading = isAcceptLoading || isRejectLoading;
@@ -148,35 +176,67 @@ const OrdersScreen = ({ navigation }) => {
         </Text>
         <Text style={styles.meta}>Quantity: {item.quantity || 1}</Text>
         <Text style={styles.meta}>Buyer: {item.buyerId?.name || "N/A"}</Text>
+        <Text style={styles.meta}>Payment: {paymentStatus}</Text>
         <Text style={styles.meta}>
           Address: {getAddressText(item.shippingAddress)}
         </Text>
 
-        <View style={styles.pendingActionsRow}>
-          <TouchableOpacity
-            style={styles.acceptButton}
-            disabled={pendingActionLoading}
-            onPress={() => handlePendingDecision(item._id, "accept")}
-          >
-            {isAcceptLoading ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Text style={styles.pendingButtonText}>Accept</Text>
-            )}
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.pendingDetailsButton}
+          onPress={() =>
+            navigation.navigate("SellerOrderDetail", { orderId: item._id })
+          }
+        >
+          <Text style={styles.pendingDetailsButtonText}>View Details</Text>
+        </TouchableOpacity>
 
+        {isPaymentSubmitted || hasPaymentProof ? (
           <TouchableOpacity
-            style={styles.rejectButton}
-            disabled={pendingActionLoading}
-            onPress={() => handlePendingDecision(item._id, "reject")}
+            style={styles.pendingProofButton}
+            onPress={() =>
+              navigation.navigate("SellerOrderDetail", { orderId: item._id })
+            }
           >
-            {isRejectLoading ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Text style={styles.pendingButtonText}>Reject</Text>
-            )}
+            <Ionicons name="image-outline" size={14} color={colors.white} />
+            <Text style={styles.pendingProofButtonText}>
+              Review Payment Proof
+            </Text>
           </TouchableOpacity>
-        </View>
+        ) : null}
+
+        {isPaymentSubmitted ? (
+          <Text style={styles.pendingHintText}>
+            Verify payment proof first. Then accept or reject from details.
+          </Text>
+        ) : null}
+
+        {!isPaymentSubmitted ? (
+          <View style={styles.pendingActionsRow}>
+            <TouchableOpacity
+              style={styles.acceptButton}
+              disabled={pendingActionLoading}
+              onPress={() => handlePendingDecision(item._id, "accept")}
+            >
+              {isAcceptLoading ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Text style={styles.pendingButtonText}>Accept</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.rejectButton}
+              disabled={pendingActionLoading}
+              onPress={() => handlePendingDecision(item._id, "reject")}
+            >
+              {isRejectLoading ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Text style={styles.pendingButtonText}>Reject</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -316,7 +376,6 @@ const styles = StyleSheet.create({
   },
   pendingList: {
     marginBottom: 12,
-    maxHeight: 220,
   },
   pendingListContent: {
     paddingRight: 12,
@@ -423,10 +482,59 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
+  proofButton: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#111827",
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  proofButtonText: {
+    color: colors.white,
+    fontWeight: "700",
+    fontSize: 12,
+  },
   pendingActionsRow: {
     marginTop: 10,
     flexDirection: "row",
     gap: 8,
+  },
+  pendingDetailsButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#EFF6FF",
+  },
+  pendingDetailsButtonText: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  pendingProofButton: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#111827",
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  pendingProofButtonText: {
+    color: colors.white,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  pendingHintText: {
+    marginTop: 8,
+    color: "#B45309",
+    fontSize: 12,
+    fontWeight: "600",
   },
   acceptButton: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,234 +7,161 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../theme/colors";
 import api from "../../api/config";
-import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
-import AnimatedWrapper from "../../components/AnimatedWrapper";
 import ScreenSurface from "../../components/ScreenSurface";
+import AnimatedWrapper from "../../components/AnimatedWrapper";
 
-const MOCK_PLACES = [
-  {
-    id: "1",
-    name: "Kashmir",
-    image:
-      "https://images.unsplash.com/photo-1595815771614-ade9d652a65d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: "2",
-    name: "Rajasthan",
-    image:
-      "https://images.unsplash.com/photo-1477587458883-47145ed94245?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: "3",
-    name: "Kerala",
-    image:
-      "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: "4",
-    name: "Darjeeling",
-    image:
-      "https://images.unsplash.com/photo-1544256226-724fc9b441da?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-  },
-  {
-    id: "5",
-    name: "Varanasi",
-    image:
-      "https://images.unsplash.com/photo-1561359313-0639aad49ca6?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-  },
-];
+const CATEGORIES = ["All", "Crafts", "Food", "Textiles"];
 
-const MOCK_PRODUCTS = [
-  {
-    _id: "m1",
-    name: "Authentic Pashmina Shawl",
-    originPlace: "Kashmir",
-    price: "12,500",
-    images: [
-      "https://images.unsplash.com/photo-1604085572504-a392ddf0d86a?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: true,
-    sellerId: "seller1",
-  },
-  {
-    _id: "m2",
-    name: "Jaipuri Blue Pottery Vase",
-    originPlace: "Rajasthan",
-    price: "1,200",
-    images: [
-      "https://images.unsplash.com/photo-1610715936287-6c2ad208cdbf?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: true,
-    sellerId: "seller2",
-  },
-  {
-    _id: "m3",
-    name: "Premium First Flush Tea",
-    originPlace: "Darjeeling",
-    price: "850",
-    images: [
-      "https://images.unsplash.com/photo-1576092762791-dd9e222046d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: true,
-    sellerId: "seller3",
-  },
-  {
-    _id: "m4",
-    name: "Kanchipuram Pure Silk Saree",
-    originPlace: "Tamil Nadu",
-    price: "18,000",
-    images: [
-      "https://images.unsplash.com/photo-1610030469983-98e550905b0f?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: true,
-    sellerId: "seller4",
-  },
-  {
-    _id: "m5",
-    name: "Handcrafted Sandalwood Idol",
-    originPlace: "Mysore",
-    price: "3,500",
-    images: [
-      "https://images.unsplash.com/photo-1629851498382-b7e1ce790472?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: false,
-    sellerId: "seller5",
-  },
-  {
-    _id: "m6",
-    name: "Kerala Spices Gift Box",
-    originPlace: "Kerala",
-    price: "950",
-    images: [
-      "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80",
-    ],
-    isVerified: true,
-    sellerId: "seller1",
-  },
-];
+const mapCategory = (item) => {
+  const source = `${item?.name || ""} ${item?.originPlace || ""}`.toLowerCase();
+  if (/tea|spice|food|coffee|snack/.test(source)) return "Food";
+  if (/shawl|saree|silk|textile|fabric/.test(source)) return "Textiles";
+  return "Crafts";
+};
+
+const trustLabel = (item) => {
+  const trust = Number(item?.sellerId?.trustScore || 0);
+  if (trust >= 90) return "Trusted 90+";
+  if (item?.isVerified) return "Verified";
+  return "New Seller";
+};
+
+const ProductSkeleton = () => (
+  <View style={styles.productCard}>
+    <View style={styles.skeletonImage} />
+    <View style={styles.productContent}>
+      <View style={styles.skeletonLineLg} />
+      <View style={styles.skeletonLineSm} />
+      <View style={styles.skeletonPrice} />
+    </View>
+  </View>
+);
 
 const HomeScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [products, setProducts] = useState(MOCK_PRODUCTS);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const displayLocation = "TamilNadu";
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
 
   const profileInitials = useMemo(() => {
     const name = String(user?.name || "").trim();
     if (!name) return "U";
-    const parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) {
-      return parts[0].slice(0, 2).toUpperCase();
-    }
-    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase();
   }, [user?.name]);
 
-  const topLocation = useMemo(() => displayLocation, [displayLocation]);
-
-  const trendingProducts = useMemo(() => {
-    const scoped = products.filter((product) => {
-      if (!topLocation || topLocation === "Your Area") return true;
-      return (
-        (product?.originPlace || "").toLowerCase() === topLocation.toLowerCase()
-      );
-    });
-
-    return [...scoped]
-      .sort((a, b) => {
-        const aScore = Number(a?.rating || 0) * 10 + Number(a?.numReviews || 0);
-        const bScore = Number(b?.rating || 0) * 10 + Number(b?.numReviews || 0);
-        return bScore - aScore;
-      })
-      .slice(0, 6);
-  }, [products, topLocation]);
-
-  const isFullyVerifiedSeller = (item) =>
-    Boolean(item?.sellerId?.isVerified) &&
-    Number(item?.sellerId?.trustScore || 0) >= 90;
-
   useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get("/products");
+        setProducts(Array.isArray(data) ? data : []);
+      } catch (_error) {
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchProducts();
   }, []);
 
-  const fetchProducts = async () => {
-    try {
-      const { data } = await api.get("/products");
-      // If API returns data, use it; otherwise fallback to mock data
-      if (data && Array.isArray(data) && data.length > 0) {
-        const uniqueProducts = Array.from(
-          new Map(
-            data
-              .filter(Boolean)
-              .map((product) => [
-                product._id || `${product.name}-${product.originPlace}`,
-                product,
-              ]),
-          ).values(),
-        );
-        console.log(
-          `Loaded products from API: ${uniqueProducts.length} unique (${data.length} raw)`,
-        );
-        setProducts(uniqueProducts);
-      } else {
-        console.log("No products from API, using mock data");
-      }
-    } catch (error) {
-      console.log("Using mock data. API Error:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return products.filter((item) => {
+      const categoryMatch =
+        activeCategory === "All" || mapCategory(item) === activeCategory;
+      if (!categoryMatch) return false;
+      if (!q) return true;
+      return `${item?.name || ""} ${item?.originPlace || ""}`
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [activeCategory, products, searchQuery]);
 
-  const renderPlaceItem = ({ item }) => (
-    <AnimatedWrapper
-      style={styles.placeCard}
-      onPress={() => navigation.navigate("PlaceScreen", { place: item.name })}
+  const nearYou = useMemo(
+    () => filteredProducts.slice(0, 8),
+    [filteredProducts],
+  );
+
+  const renderCategory = (category) => (
+    <TouchableOpacity
+      key={category}
+      style={[
+        styles.categoryChip,
+        activeCategory === category && styles.categoryChipActive,
+      ]}
+      onPress={() => setActiveCategory(category)}
+      activeOpacity={0.9}
     >
-      <Image source={{ uri: item.image }} style={styles.placeImage} />
-      <Text style={styles.placeText}>{item.name}</Text>
+      <Text
+        style={[
+          styles.categoryChipText,
+          activeCategory === category && styles.categoryChipTextActive,
+        ]}
+      >
+        {category}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const renderNearYouItem = ({ item }) => (
+    <AnimatedWrapper
+      style={styles.nearCard}
+      onPress={() => navigation.navigate("ProductScreen", { product: item })}
+    >
+      <Image
+        source={{ uri: item?.images?.[0] || "https://via.placeholder.com/300" }}
+        style={styles.nearImage}
+      />
+      <View style={styles.nearMeta}>
+        <Text numberOfLines={1} style={styles.nearName}>
+          {item?.name || "Product"}
+        </Text>
+        <Text style={styles.nearLocation}>{item?.originPlace || "Nearby"}</Text>
+      </View>
     </AnimatedWrapper>
   );
 
-  const renderProductItem = ({ item }) => (
+  const renderProduct = ({ item }) => (
     <AnimatedWrapper
       style={styles.productCard}
       onPress={() => navigation.navigate("ProductScreen", { product: item })}
     >
-      <Image
-        source={{ uri: item.images?.[0] || "https://via.placeholder.com/150" }}
-        style={styles.productImage}
-      />
-      <View style={styles.productInfo}>
+      <View style={styles.productImageWrap}>
+        <Image
+          source={{
+            uri: item?.images?.[0] || "https://via.placeholder.com/300",
+          }}
+          style={styles.productImage}
+        />
+        <View style={styles.trustBadge}>
+          <Ionicons name="shield-checkmark" size={12} color={colors.primary} />
+          <Text style={styles.trustBadgeText}>{trustLabel(item)}</Text>
+        </View>
+      </View>
+      <View style={styles.productContent}>
         <Text style={styles.productName} numberOfLines={1}>
-          {item.name}
+          {item?.name || "Product"}
         </Text>
-        <Text style={styles.productOrigin}>{displayLocation}</Text>
-        <View style={styles.ratingRow}>
-          <Ionicons name="star" size={12} color={colors.warning} />
-          <Text style={styles.ratingText}>
-            {Number(item.rating || 0).toFixed(1)} ({item.numReviews || 0})
-          </Text>
-        </View>
-        <View style={styles.priceRow}>
-          <Text style={styles.productPrice}>
-            ₹
-            {typeof item.price === "number"
-              ? item.price.toLocaleString()
-              : item.price}
-          </Text>
-        </View>
-        {isFullyVerifiedSeller(item) ? (
-          <Text style={styles.fullyVerifiedBadge}>Fully Verified Seller</Text>
-        ) : item.isVerified ? (
-          <Text style={styles.verifiedBadge}>Verified</Text>
-        ) : null}
+        <Text style={styles.productMeta}>{item?.originPlace || "Local"}</Text>
+        <Text style={styles.productPrice}>
+          Rs {Number(item?.price || 0).toLocaleString()}
+        </Text>
       </View>
     </AnimatedWrapper>
   );
@@ -242,108 +169,102 @@ const HomeScreen = ({ navigation }) => {
   return (
     <ScreenSurface style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Header outside ScrollView so it acts like a real header */}
-        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-          <View>
-            <Text style={styles.headerTitle}>Roots</Text>
-            <Text style={styles.headerSubtitle}>
-              Discover hidden authentic gems
-            </Text>
-          </View>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{profileInitials}</Text>
-          </View>
-        </View>
-
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: 80 + insets.bottom },
-          ]}
+          stickyHeaderIndices={[0]}
+          contentContainerStyle={{ paddingBottom: 88 + insets.bottom }}
         >
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Explore by Place</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Places")}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          <FlatList
-            data={MOCK_PLACES}
-            renderItem={renderPlaceItem}
-            keyExtractor={(item) => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.placeList}
-          />
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              Top Trending in {displayLocation}
-            </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Trending")}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          <FlatList
-            horizontal
-            data={trendingProducts}
-            keyExtractor={(item) => item._id}
-            renderItem={({ item }) => (
-              <AnimatedWrapper
-                style={styles.trendingCard}
-                onPress={() =>
-                  navigation.navigate("ProductScreen", { product: item })
-                }
-              >
-                <Image
-                  source={{
-                    uri: item.images?.[0] || "https://via.placeholder.com/150",
-                  }}
-                  style={styles.trendingImage}
-                />
-                <Text style={styles.trendingName} numberOfLines={1}>
-                  {item.name}
+          <View
+            style={[styles.stickySearchWrap, { paddingTop: insets.top + 10 }]}
+          >
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.headerTitle}>Roots Marketplace</Text>
+                <Text style={styles.headerSubtitle}>
+                  Find regional originals near you
                 </Text>
-                <View style={styles.trendingMetaRow}>
-                  <Ionicons name="star" size={12} color={colors.warning} />
-                  <Text style={styles.trendingMetaText}>
-                    {Number(item.rating || 0).toFixed(1)} (
-                    {item.numReviews || 0})
-                  </Text>
-                </View>
-                {isFullyVerifiedSeller(item) ? (
-                  <Text style={styles.fullyVerifiedBadgeSmall}>
-                    Fully Verified Seller
-                  </Text>
-                ) : null}
-              </AnimatedWrapper>
-            )}
-            contentContainerStyle={styles.trendingList}
-            showsHorizontalScrollIndicator={false}
-          />
+              </View>
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarText}>{profileInitials}</Text>
+              </View>
+            </View>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Authentic Finds</Text>
+            <View style={styles.searchBox}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search by product, place, or seller"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.searchInput}
+              />
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.categoryRow}>
+                {CATEGORIES.map(renderCategory)}
+              </View>
+            </ScrollView>
           </View>
 
-          {loading ? (
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-              style={{ marginTop: 40 }}
-            />
-          ) : (
-            <View style={styles.productsGrid}>
-              {products.map((item) => (
-                <React.Fragment key={item._id}>
-                  {renderProductItem({ item })}
-                </React.Fragment>
-              ))}
+          <View style={styles.contentWrap}>
+            <View style={styles.sectionHeadRow}>
+              <Text style={styles.sectionTitle}>Near You</Text>
             </View>
-          )}
+
+            {loading ? (
+              <View>
+                <View style={styles.nearSkeleton} />
+              </View>
+            ) : (
+              <FlatList
+                horizontal
+                data={nearYou}
+                keyExtractor={(item) => item?._id || item?.name}
+                renderItem={renderNearYouItem}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingRight: 6 }}
+              />
+            )}
+
+            <Text style={[styles.sectionTitle, { marginTop: 22 }]}>
+              All Products
+            </Text>
+
+            {loading ? (
+              <View>
+                {[1, 2, 3, 4].map((k) => (
+                  <ProductSkeleton key={k} />
+                ))}
+              </View>
+            ) : filteredProducts.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyArt}>:-|</Text>
+                <Text style={styles.emptyTitle}>No products found</Text>
+                <TouchableOpacity
+                  style={styles.emptyCta}
+                  onPress={() => {
+                    setSearchQuery("");
+                    setActiveCategory("All");
+                  }}
+                >
+                  <Text style={styles.emptyCtaText}>Reset filters</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredProducts}
+                renderItem={renderProduct}
+                keyExtractor={(item) => item?._id || item?.name}
+                scrollEnabled={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+              />
+            )}
+          </View>
         </ScrollView>
       </View>
     </ScreenSurface>
@@ -351,234 +272,194 @@ const HomeScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  header: {
-    paddingTop: 10,
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface },
+  stickySearchWrap: {
+    backgroundColor: colors.surface,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#F9FAFB",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: colors.border,
+  },
+  headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 27,
-    fontWeight: "800",
-    color: "#111827",
-    letterSpacing: -0.4,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "#6B7280",
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  avatarCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-  },
-  avatarText: {
-    color: "#111827",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  scrollContent: {
-    paddingTop: 12,
-    paddingBottom: 32,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
     marginBottom: 12,
+  },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: colors.textPrimary },
+  headerSubtitle: { marginTop: 2, fontSize: 13, color: colors.textSecondary },
+  avatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.lightBackground,
+  },
+  avatarText: { fontSize: 14, fontWeight: "800", color: colors.primary },
+  searchBox: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 10,
+  },
+  categoryRow: { flexDirection: "row", marginTop: 10 },
+  categoryChip: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.lightBackground,
+    borderColor: colors.primary,
+  },
+  categoryChipText: {
+    color: colors.textSecondary,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  categoryChipTextActive: { color: colors.primary },
+  contentWrap: { paddingHorizontal: 16, paddingTop: 14 },
+  sectionHeadRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sectionTitle: {
-    fontSize: 19,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  seeAllText: {
-    color: "#007AFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  placeList: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  trendingList: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  trendingCard: {
-    width: 170,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 12,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  trendingImage: {
-    width: "100%",
-    height: 128,
-    borderRadius: 12,
+    fontSize: 18,
+    fontWeight: "800",
+    color: colors.textPrimary,
     marginBottom: 12,
   },
-  trendingName: {
-    fontSize: 14,
-    color: "#111827",
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  trendingMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  trendingMetaText: {
-    fontSize: 11,
-    color: "#6B7280",
-    fontWeight: "600",
-  },
-  placeCard: {
-    marginRight: 12,
-    alignItems: "center",
-  },
-  placeImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    marginBottom: 6,
+  nearCard: {
+    width: 240,
+    marginRight: 10,
+    backgroundColor: colors.white,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
+    overflow: "hidden",
   },
-  placeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  productsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-  },
+  nearImage: { width: "100%", aspectRatio: 16 / 9, resizeMode: "cover" },
+  nearMeta: { padding: 10 },
+  nearName: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  nearLocation: { marginTop: 3, fontSize: 12, color: colors.textSecondary },
   productCard: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    marginBottom: 16,
-    padding: 12,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  productImage: {
-    width: "100%",
-    height: 132,
-    borderRadius: 12,
     marginBottom: 12,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.09,
+    shadowRadius: 5,
+    elevation: 2,
+    overflow: "hidden",
   },
-  productInfo: {
-    paddingHorizontal: 0,
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  productOrigin: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginBottom: 8,
-  },
-  priceRow: {
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  ratingRow: {
+  productImageWrap: { position: "relative" },
+  productImage: { width: "100%", aspectRatio: 16 / 9, resizeMode: "cover" },
+  trustBadge: {
+    position: "absolute",
+    left: 10,
+    bottom: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    marginBottom: 8,
+    backgroundColor: "rgba(255,255,255,0.93)",
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
-  ratingText: {
-    fontSize: 10,
-    color: "#6B7280",
-    fontWeight: "600",
-  },
-  productPrice: {
-    fontSize: 17,
+  trustBadgeText: {
+    marginLeft: 4,
+    fontSize: 11,
     fontWeight: "700",
-    color: "#007AFF",
+    color: colors.primary,
   },
-  verifiedBadge: {
-    alignSelf: "flex-start",
-    maxWidth: "100%",
-    fontSize: 12,
-    color: "#059669",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: "hidden",
-    fontWeight: "600",
-    textAlign: "center",
+  productContent: { padding: 12 },
+  productName: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  productMeta: { marginTop: 4, fontSize: 12, color: colors.textSecondary },
+  productPrice: {
+    marginTop: 7,
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.primary,
   },
-  fullyVerifiedBadge: {
-    alignSelf: "flex-start",
-    maxWidth: "100%",
-    fontSize: 12,
-    color: "#059669",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: "hidden",
-    fontWeight: "600",
-    textAlign: "center",
+  skeletonImage: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    backgroundColor: "#E5ECF4",
   },
-  fullyVerifiedBadgeSmall: {
+  skeletonLineLg: {
+    height: 14,
+    borderRadius: 7,
+    width: "80%",
+    backgroundColor: "#E5ECF4",
+  },
+  skeletonLineSm: {
+    height: 12,
+    borderRadius: 6,
+    width: "45%",
+    backgroundColor: "#E5ECF4",
     marginTop: 8,
-    alignSelf: "flex-start",
-    fontSize: 12,
-    color: "#059669",
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: "hidden",
-    fontWeight: "600",
   },
+  skeletonPrice: {
+    height: 14,
+    borderRadius: 7,
+    width: "38%",
+    backgroundColor: "#E5ECF4",
+    marginTop: 10,
+  },
+  nearSkeleton: {
+    width: 240,
+    aspectRatio: 16 / 10,
+    borderRadius: 12,
+    backgroundColor: "#E5ECF4",
+  },
+  emptyState: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 20,
+    alignItems: "center",
+  },
+  emptyArt: { fontSize: 40 },
+  emptyTitle: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  emptyCta: {
+    marginTop: 12,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCtaText: { color: colors.white, fontWeight: "700" },
 });
 
 export default HomeScreen;

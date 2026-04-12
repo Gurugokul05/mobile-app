@@ -17,6 +17,7 @@ import PlacesScreen from "../screens/buyer/PlacesScreen";
 import PlaceScreen from "../screens/buyer/PlaceScreen";
 import ProductScreen from "../screens/buyer/ProductScreen";
 import CartCheckoutScreen from "../screens/buyer/CartCheckoutScreen";
+import UpiPaymentScreen from "../screens/buyer/UpiPaymentScreen";
 import OrderTrackingScreen from "../screens/buyer/OrderTrackingScreen";
 import ProfileScreen from "../screens/buyer/ProfileScreen";
 import BuyerSellerProfileScreen from "../screens/buyer/SellerProfileScreen";
@@ -74,7 +75,7 @@ const BuyerTabs = () => {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: "#007AFF",
+        tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: "#9CA3AF",
         tabBarStyle: {
           height: 60 + insets.bottom,
@@ -129,7 +130,7 @@ const SellerTabs = () => {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: "#007AFF",
+        tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: "#9CA3AF",
         tabBarStyle: {
           height: 60 + insets.bottom,
@@ -218,6 +219,7 @@ export default function AppNavigator() {
           component={BuyerSellerProfileScreen}
         />
         <Stack.Screen name="Checkout" component={CartCheckoutScreen} />
+        <Stack.Screen name="UpiPayment" component={UpiPaymentScreen} />
         <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
         <Stack.Screen name="Refunds" component={RefundScreen} />
         <Stack.Screen

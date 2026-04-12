@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const { isValidUpiId, normalizeUpiId } = require("../utils/upi");
 
 const forgotPasswordOtpStore = new Map();
 const loginTwoFactorStore = new Map();
@@ -802,7 +803,16 @@ exports.resendLoginTwoFactorOtp = async (req, res) => {
 exports.getUserProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("-password");
-    res.json(user);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const profile = user.toObject();
+    if (user.role === "seller") {
+      profile.upiId = String(user.sellerPayment?.upiId || "");
+    }
+
+    res.json(profile);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -826,6 +836,7 @@ exports.updateUserProfile = async (req, res) => {
       totalReviews,
       averageRating,
       avatar,
+      upiId,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -850,6 +861,7 @@ exports.updateUserProfile = async (req, res) => {
     const normalizedYearsInBusiness = Number(
       yearsInBusiness ?? user.yearsInBusiness ?? 0,
     );
+    const normalizedUpiId = normalizeUpiId(upiId);
 
     const normalizedSpecialties = Array.isArray(specialties)
       ? specialties.map((item) => String(item || "").trim()).filter(Boolean)
@@ -870,6 +882,10 @@ exports.updateUserProfile = async (req, res) => {
       if (!normalizedAddress) missingFields.push("address");
       if (!normalizedResponseTime) missingFields.push("responseTime");
       if (!normalizedDescription) missingFields.push("description");
+
+      if (!String(user.sellerPayment?.upiId || "").trim() && !normalizedUpiId) {
+        missingFields.push("upiId");
+      }
 
       if (missingFields.length > 0) {
         return res.status(400).json({
@@ -892,6 +908,32 @@ exports.updateUserProfile = async (req, res) => {
     }
     if (typeof returnRate === "string") user.returnRate = normalizedReturnRate;
     if (typeof avatar === "string") user.avatar = avatar.trim();
+
+    if (upiId !== undefined) {
+      if (!isValidUpiId(normalizedUpiId)) {
+        return res
+          .status(400)
+          .json({
+            message: "upiId must be in valid format (example: name@bank)",
+          });
+      }
+
+      const previousValue = String(user.sellerPayment?.upiId || "");
+      if (previousValue !== normalizedUpiId) {
+        user.sellerPayment = user.sellerPayment || {};
+        user.sellerPayment.upiId = normalizedUpiId;
+        user.sellerPayment.upiIdLastUpdatedAt = new Date();
+        user.sellerPayment.upiIdChangeLog = [
+          {
+            previousValue,
+            nextValue: normalizedUpiId,
+            changedBy: user._id,
+            changedAt: new Date(),
+          },
+          ...(user.sellerPayment.upiIdChangeLog || []),
+        ].slice(0, 20);
+      }
+    }
 
     if (Array.isArray(specialties)) {
       user.specialties = normalizedSpecialties;
@@ -941,6 +983,8 @@ exports.updateUserProfile = async (req, res) => {
       avatar: user.avatar,
       trustScore: user.trustScore || 0,
       isVerified: !!user.isVerified,
+      upiId:
+        user.role === "seller" ? String(user.sellerPayment?.upiId || "") : "",
       message: "Profile updated successfully",
     });
   } catch (error) {

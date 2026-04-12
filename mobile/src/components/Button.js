@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { Animated, Pressable, Text, StyleSheet } from "react-native";
 import { colors } from "../theme/colors";
+import { hapticPress } from "../utils/haptics";
 
 const Button = ({
   title,
@@ -23,7 +24,10 @@ const Button = ({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        hapticPress();
+        if (typeof onPress === "function") onPress();
+      }}
       disabled={disabled}
       onPressIn={() => animateTo(0.97)}
       onPressOut={() => animateTo(1)}
@@ -53,6 +57,7 @@ const Button = ({
 
 const styles = StyleSheet.create({
   button: {
+    minHeight: 48,
     paddingVertical: 15,
     paddingHorizontal: 20,
     borderRadius: 14,

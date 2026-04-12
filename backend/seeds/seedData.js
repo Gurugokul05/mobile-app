@@ -14,6 +14,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: true,
     trustScore: 95,
+    sellerPayment: {
+      upiId: "arun.kumar@oksbi",
+    },
   },
   {
     name: "Priya Sharma",
@@ -24,6 +27,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: true,
     trustScore: 92,
+    sellerPayment: {
+      upiId: "priya.sharma@okhdfcbank",
+    },
   },
   {
     name: "Rajesh Nair",
@@ -34,6 +40,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: true,
     trustScore: 98,
+    sellerPayment: {
+      upiId: "rajesh.nair@okaxis",
+    },
   },
   {
     name: "Deepika Menon",
@@ -44,6 +53,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: true,
     trustScore: 94,
+    sellerPayment: {
+      upiId: "deepika.menon@ybl",
+    },
   },
   {
     name: "Vikram Singh",
@@ -54,6 +66,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: true,
     trustScore: 89,
+    sellerPayment: {
+      upiId: "vikram.singh@okicici",
+    },
   },
   {
     name: "Test Seller",
@@ -64,6 +79,9 @@ const SELLERS_DATA = [
     role: "seller",
     isVerified: false,
     trustScore: 0,
+    sellerPayment: {
+      upiId: "test.seller@oksbi",
+    },
   },
   {
     name: "Premium Artisan - Test",
@@ -79,6 +97,9 @@ const SELLERS_DATA = [
     certifications: ["ISO 9001", "Craft Excellence Award"],
     description:
       "Premium artisan products with international quality standards",
+    sellerPayment: {
+      upiId: "premium.artisan@paytm",
+    },
   },
 ];
 
@@ -286,10 +307,35 @@ const PRODUCT_REPLACEMENT_IMAGES = [
 const ensureDemoUsers = async () => {
   // Create sellers
   let sellersCreated = 0;
+  let sellersBackfilled = 0;
   for (const seller of SELLERS_DATA) {
     const normalizedEmail = seller.email.trim().toLowerCase();
+    const sellerUpiId = String(seller.sellerPayment?.upiId || "").trim();
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
+      if (existingUser.role === "seller") {
+        const existingUpiId = String(
+          existingUser.sellerPayment?.upiId || "",
+        ).trim();
+
+        if (!existingUpiId && sellerUpiId) {
+          existingUser.sellerPayment = existingUser.sellerPayment || {};
+          existingUser.sellerPayment.upiId = sellerUpiId;
+          existingUser.sellerPayment.upiIdLastUpdatedAt = new Date();
+          existingUser.sellerPayment.upiIdChangeLog = [
+            {
+              previousValue: "",
+              nextValue: sellerUpiId,
+              changedAt: new Date(),
+              changedBy: existingUser._id,
+            },
+            ...(existingUser.sellerPayment.upiIdChangeLog || []),
+          ].slice(0, 20);
+          await existingUser.save();
+          sellersBackfilled += 1;
+        }
+      }
+
       continue;
     }
 
@@ -303,6 +349,10 @@ const ensureDemoUsers = async () => {
 
   if (sellersCreated > 0) {
     console.log(`✅ Created ${sellersCreated} seller(s)`);
+  }
+
+  if (sellersBackfilled > 0) {
+    console.log(`✅ Backfilled UPI IDs for ${sellersBackfilled} seller(s)`);
   }
 
   // Create buyers

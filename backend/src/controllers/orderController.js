@@ -1,7 +1,9 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const User = require("../models/User");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
+const { toStoredUploadUrl } = require("../utils/media");
 
 let razorpayInstance;
 try {
@@ -19,7 +21,50 @@ const normalizeOrderStatus = (status) => {
   return status;
 };
 
-// @desc    Create new order & Razorpay order
+const PAYMENT_PENDING = "Pending Payment";
+const PAYMENT_SUBMITTED = "Payment Submitted";
+const PAYMENT_VERIFIED = "Payment Verified";
+const PAYMENT_FAILED = "Payment Failed";
+const PAYMENT_EXPIRED = "Payment Expired";
+
+const UPI_PAYMENT_TIMEOUT_MINUTES = Number(
+  process.env.UPI_PAYMENT_TIMEOUT_MINUTES || 15,
+);
+const TAX_RATE = Number(process.env.UPI_TAX_RATE || 0.05);
+const DELIVERY_FEE = Number(process.env.UPI_DELIVERY_FEE || 0);
+
+const toAmount = (value) => Number(Number(value || 0).toFixed(2));
+
+const generateOrderReference = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const randomPart = crypto.randomBytes(4).toString("hex").toUpperCase();
+  return `ORD-${yyyy}${mm}${dd}-${randomPart}`;
+};
+
+const markPaymentExpiredIfNeeded = async (order) => {
+  const isPendingPayment = order?.paymentDetails?.status === PAYMENT_PENDING;
+  const expiryAt = order?.paymentDetails?.expiresAt;
+
+  if (!isPendingPayment || !expiryAt) {
+    return order;
+  }
+
+  if (new Date(expiryAt).getTime() > Date.now()) {
+    return order;
+  }
+
+  order.paymentDetails.status = PAYMENT_EXPIRED;
+  order.paymentDetails.verificationNote =
+    "Payment window expired before proof submission";
+  order.updatedAt = new Date();
+  await order.save();
+  return order;
+};
+
+// @desc    Create new order for UPI manual payment flow
 // @route   POST /api/orders
 // @access  Private
 exports.createOrder = async (req, res) => {
@@ -35,34 +80,33 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const totalPrice = product.price * quantity;
-
-    const isTestMode =
-      String(process.env.RAZORPAY_TEST_MODE || "false")
-        .trim()
-        .toLowerCase() === "true";
-
-    // Create Razorpay order whenever keys are configured; fallback to mock only if unavailable.
-    let rpOrder;
-    const canUseRazorpayApi =
-      !isTestMode &&
-      Boolean(razorpayInstance) &&
-      Boolean(process.env.RAZORPAY_KEY_ID) &&
-      Boolean(process.env.RAZORPAY_KEY_SECRET);
-
-    if (canUseRazorpayApi) {
-      const options = {
-        amount: totalPrice * 100, // amount in smallest currency unit
-        currency: "INR",
-        receipt: `receipt_order_${Date.now()}`,
-      };
-      rpOrder = await razorpayInstance.orders.create(options);
-    } else {
-      // Mocked in test mode and local development
-      rpOrder = { id: `mock_rp_${Date.now()}` };
+    const seller = await User.findById(product.sellerId).select(
+      "name sellerPayment role",
+    );
+    const sellerUpiId = String(seller?.sellerPayment?.upiId || "").trim();
+    if (!sellerUpiId) {
+      return res.status(400).json({
+        message:
+          "Seller UPI ID is missing. This seller cannot receive UPI payments right now.",
+      });
     }
 
+    const subtotal = toAmount(product.price * quantity);
+    const taxAmount = toAmount(subtotal * TAX_RATE);
+    const deliveryFee = toAmount(DELIVERY_FEE);
+    const totalPrice = toAmount(subtotal + taxAmount + deliveryFee);
+
+    let orderReference = generateOrderReference();
+    while (await Order.exists({ orderReference })) {
+      orderReference = generateOrderReference();
+    }
+
+    const expiresAt = new Date(
+      Date.now() + UPI_PAYMENT_TIMEOUT_MINUTES * 60 * 1000,
+    );
+
     const order = new Order({
+      orderReference,
       buyerId: req.user._id,
       sellerId: product.sellerId,
       productId,
@@ -70,8 +114,18 @@ exports.createOrder = async (req, res) => {
       totalPrice,
       status: "Pending",
       paymentDetails: {
-        razorpayOrderId: rpOrder.id,
-        status: "Pending",
+        method: "UPIManual",
+        status: PAYMENT_PENDING,
+        sellerUpiId,
+        sellerName: seller?.name || "Seller",
+        expiresAt,
+        lockedAmount: {
+          subtotal,
+          taxAmount,
+          deliveryFee,
+          grandTotal: totalPrice,
+          currency: "INR",
+        },
       },
       shippingAddress,
     });
@@ -79,10 +133,15 @@ exports.createOrder = async (req, res) => {
     const createdOrder = await order.save();
     res.status(201).json({
       order: createdOrder,
-      rpOrderId: rpOrder.id,
-      amount: totalPrice * 100,
-      paymentMode: canUseRazorpayApi ? "razorpay" : "mock",
-      razorpayKeyId: canUseRazorpayApi ? process.env.RAZORPAY_KEY_ID : null,
+      paymentMode: "upi_manual",
+      paymentSession: {
+        sellerName: seller?.name || "Seller",
+        sellerUpiId,
+        amount: totalPrice,
+        currency: "INR",
+        orderReference,
+        expiresAt,
+      },
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -204,6 +263,8 @@ exports.getMyOrders = async (req, res) => {
       .populate("sellerId", "name trustScore")
       .sort({ createdAt: -1 });
 
+    await Promise.all(orders.map((order) => markPaymentExpiredIfNeeded(order)));
+
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -227,16 +288,179 @@ exports.getOrderById = async (req, res) => {
     // Check authorization
     if (
       order.buyerId._id.toString() !== req.user._id.toString() &&
-      order.sellerId._id.toString() !== req.user._id.toString()
+      order.sellerId._id.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
     ) {
       return res
         .status(403)
         .json({ message: "Not authorized to view this order" });
     }
 
+    await markPaymentExpiredIfNeeded(order);
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Submit UPI payment proof (Buyer)
+// @route   POST /api/orders/:id/submit-upi-proof
+// @access  Private/Buyer
+exports.submitUpiPaymentProof = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (String(order.buyerId) !== String(req.user._id)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    await markPaymentExpiredIfNeeded(order);
+
+    if (order.paymentDetails?.method !== "UPIManual") {
+      return res.status(400).json({ message: "This is not a UPI order" });
+    }
+
+    if (order.paymentDetails?.status === PAYMENT_EXPIRED) {
+      return res.status(400).json({
+        message:
+          "Payment session expired. Please create a new order to retry payment.",
+      });
+    }
+
+    if (!req.file?.path) {
+      return res
+        .status(400)
+        .json({ message: "Payment screenshot is required" });
+    }
+
+    const claimedTransactionId = String(
+      req.body?.claimedTransactionId || "",
+    ).trim();
+
+    if (!claimedTransactionId) {
+      return res.status(400).json({
+        message: "claimedTransactionId is required",
+      });
+    }
+
+    order.paymentDetails.proof = {
+      screenshotUrl: toStoredUploadUrl(req.file),
+      claimedTransactionId,
+    };
+    order.paymentDetails.submittedAt = new Date();
+    order.paymentDetails.status = PAYMENT_SUBMITTED;
+    order.paymentDetails.verificationNote =
+      "Buyer submitted payment proof for manual verification";
+    order.updatedAt = new Date();
+
+    await order.save();
+    return res.json({
+      message: "Payment proof submitted successfully",
+      paymentStatus: order.paymentDetails.status,
+      order,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    List UPI payment verification queue (Admin/Seller)
+// @route   GET /api/orders/payment-verifications
+// @access  Private/AdminOrSeller
+exports.getUpiPaymentVerifications = async (req, res) => {
+  try {
+    const statusFilter = String(req.query?.status || "").trim();
+    const normalizedStatusFilter = statusFilter.toLowerCase();
+
+    const query = {
+      "paymentDetails.method": "UPIManual",
+    };
+
+    if (req.user.role === "seller") {
+      query.sellerId = req.user._id;
+    }
+
+    if (normalizedStatusFilter && normalizedStatusFilter !== "all") {
+      query["paymentDetails.status"] = statusFilter;
+    } else {
+      query["paymentDetails.status"] = {
+        $in: [PAYMENT_SUBMITTED, PAYMENT_PENDING, PAYMENT_EXPIRED],
+      };
+    }
+
+    const orders = await Order.find(query)
+      .populate("buyerId", "name email phone")
+      .populate("sellerId", "name email")
+      .populate("productId", "name images")
+      .sort({ createdAt: -1 });
+
+    await Promise.all(orders.map((order) => markPaymentExpiredIfNeeded(order)));
+
+    return res.json(orders);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Approve or reject UPI payment proof
+// @route   PUT /api/orders/:id/payment-verification
+// @access  Private/AdminOrSeller
+exports.verifyUpiPaymentProof = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isSellerOwner =
+      req.user.role === "seller" &&
+      String(order.sellerId) === String(req.user._id);
+
+    if (!isAdmin && !isSellerOwner) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (order.paymentDetails?.method !== "UPIManual") {
+      return res.status(400).json({ message: "This is not a UPI order" });
+    }
+
+    await markPaymentExpiredIfNeeded(order);
+
+    if (order.paymentDetails?.status !== PAYMENT_SUBMITTED) {
+      return res.status(400).json({
+        message: "Only payment submissions can be approved or rejected",
+      });
+    }
+
+    const decision = String(req.body?.decision || "").toLowerCase();
+    const verificationNote = String(req.body?.verificationNote || "").trim();
+
+    order.paymentDetails.status =
+      decision === "approve" ? PAYMENT_VERIFIED : PAYMENT_FAILED;
+    order.paymentDetails.verifiedAt = new Date();
+    order.paymentDetails.verifiedBy = req.user._id;
+    order.paymentDetails.verificationNote = verificationNote;
+    order.updatedAt = new Date();
+
+    await order.save();
+
+    return res.json({
+      message:
+        decision === "approve"
+          ? "Payment approved successfully"
+          : "Payment rejected successfully",
+      paymentStatus: order.paymentDetails.status,
+      order,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -266,7 +490,7 @@ exports.uploadPackingProof = async (req, res) => {
         .status(400)
         .json({ message: "Please upload packing proof video/image" });
 
-    order.packingProofUrl = req.file.path;
+    order.packingProofUrl = toStoredUploadUrl(req.file);
     order.status = "Packed";
     order.updatedAt = new Date();
 
@@ -299,6 +523,16 @@ exports.acceptOrder = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Only pending orders can be accepted" });
+    }
+
+    if (
+      order.paymentDetails?.method === "UPIManual" &&
+      order.paymentDetails?.status !== PAYMENT_VERIFIED
+    ) {
+      return res.status(400).json({
+        message:
+          "Order can be accepted only after payment is manually verified",
+      });
     }
 
     order.status = "Accepted";

@@ -11,6 +11,9 @@ const {
   rejectOrder,
   shipOrder,
   deliverOrder,
+  submitUpiPaymentProof,
+  getUpiPaymentVerifications,
+  verifyUpiPaymentProof,
 } = require("../controllers/orderController");
 const {
   protect,
@@ -23,6 +26,8 @@ const {
   validateObjectIdParam,
   validateOrderCreateRequest,
   validatePaymentVerificationRequest,
+  validateUpiPaymentSubmissionRequest,
+  validateUpiPaymentDecisionRequest,
 } = require("../middlewares/validators");
 
 router.get("/razorpay/diagnostics", getRazorpayDiagnostics);
@@ -30,6 +35,10 @@ router.get("/razorpay/diagnostics", getRazorpayDiagnostics);
 router.route("/").post(protect, buyer, validateOrderCreateRequest, createOrder);
 
 router.route("/my-orders").get(protect, buyer, getMyOrders);
+
+router
+  .route("/payment-verifications")
+  .get(protect, adminOrSeller, getUpiPaymentVerifications);
 
 router.route("/:id").get(protect, validateObjectIdParam("id"), getOrderById);
 
@@ -41,6 +50,27 @@ router
     validateObjectIdParam("id"),
     validatePaymentVerificationRequest,
     verifyPayment,
+  );
+
+router
+  .route("/:id/submit-upi-proof")
+  .post(
+    protect,
+    buyer,
+    validateObjectIdParam("id"),
+    upload.single("paymentProof"),
+    validateUpiPaymentSubmissionRequest,
+    submitUpiPaymentProof,
+  );
+
+router
+  .route("/:id/payment-verification")
+  .put(
+    protect,
+    adminOrSeller,
+    validateObjectIdParam("id"),
+    validateUpiPaymentDecisionRequest,
+    verifyUpiPaymentProof,
   );
 
 router

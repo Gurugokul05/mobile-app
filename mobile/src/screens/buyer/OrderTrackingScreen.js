@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,53 +6,67 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
-  Linking,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { colors } from "../../theme/colors";
 import api from "../../api/config";
 import { useAppAlert } from "../../context/AlertContext";
 import { useAuth } from "../../context/AuthContext";
 import ScreenSurface from "../../components/ScreenSurface";
 
-const ORDER_STAGES = ["Pending", "Accepted", "Packed", "Shipped", "Delivered"];
+const STAGES = ["pending", "accepted", "packed", "shipped", "delivered"];
 
-const normalizeOrderStatus = (status) => {
-  if (status === "Ordered") return "Pending";
-  if (status === "Cancelled") return "Rejected";
-  return status || "Pending";
+const STATUS_STYLES = {
+  pending: { color: colors.warning, icon: "time-outline" },
+  accepted: { color: colors.primary, icon: "checkmark-circle-outline" },
+  packed: { color: colors.primary, icon: "cube-outline" },
+  shipped: { color: "#7C3AED", icon: "airplane-outline" },
+  delivered: { color: colors.success, icon: "checkmark-done-circle-outline" },
+  rejected: { color: colors.error, icon: "close-circle-outline" },
+};
+
+const normalizeStatus = (status) => {
+  const s = String(status || "pending").toLowerCase();
+  if (s === "ordered") return "pending";
+  if (s === "cancelled") return "rejected";
+  return s;
+};
+
+const formatDate = (value) => {
+  if (!value) return "--";
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const OrderTrackingScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("all");
   const { showAlert } = useAppAlert();
   const { userToken } = useAuth();
 
-  useEffect(() => {
-    fetchOrders();
-  }, [userToken]);
-
-  const fetchOrders = async () => {
+  const fetchOrders = async (isRefreshing = false) => {
     if (!userToken) {
       setOrders([]);
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
     try {
-      setLoading(true);
+      if (isRefreshing) setRefreshing(true);
+      else setLoading(true);
       const { data } = await api.get("/orders/my-orders");
-      setOrders(data || []);
-    } catch (error) {
-      if (error?.response?.status === 401) {
-        setOrders([]);
-        return;
-      }
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (_error) {
       showAlert({
         title: "Error",
         message: "Failed to fetch orders",
@@ -60,559 +74,332 @@ const OrderTrackingScreen = ({ navigation }) => {
       });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    const normalized = normalizeOrderStatus(status).toLowerCase();
+  useEffect(() => {
+    fetchOrders();
+  }, [userToken]);
 
-    switch (normalized) {
-      case "delivered":
-        return colors.success;
-      case "shipped":
-        return colors.primary;
-      case "packed":
-        return colors.warning;
-      case "accepted":
-        return "#1D4ED8";
-      case "rejected":
-        return colors.error;
-      case "pending":
-        return colors.textSecondary;
-      default:
-        return colors.textSecondary;
-    }
-  };
+  const filteredOrders = useMemo(() => {
+    if (selectedFilter === "all") return orders;
+    return orders.filter(
+      (item) => normalizeStatus(item?.status) === selectedFilter,
+    );
+  }, [orders, selectedFilter]);
 
-  const getStatusIcon = (status) => {
-    const normalized = normalizeOrderStatus(status).toLowerCase();
+  const renderStage = (order, stage, index) => {
+    const orderStatus = normalizeStatus(order?.status);
+    const doneIndex = STAGES.indexOf(orderStatus);
+    const isRejected = orderStatus === "rejected";
 
-    switch (normalized) {
-      case "delivered":
-        return "checkmark-done-circle";
-      case "shipped":
-        return "rocket-outline";
-      case "packed":
-        return "package-outline";
-      case "accepted":
-        return "checkmark-circle-outline";
-      case "rejected":
-        return "close-circle-outline";
-      case "pending":
-        return "bag-handle-outline";
-      default:
-        return "help-circle-outline";
-    }
-  };
-
-  const getCurrentStageIndex = (status) => {
-    const normalized = normalizeOrderStatus(status);
-    return ORDER_STAGES.findIndex((stage) => stage === normalized);
-  };
-
-  const openTrackingUrl = async (url) => {
-    if (!url) return;
-
-    try {
-      await Linking.openURL(url);
-    } catch (_error) {
-      showAlert({
-        title: "Unable to Open",
-        message: "Tracking URL is unavailable on this device",
-        type: "warning",
-      });
-    }
-  };
-
-  const handleViewDetails = (order) => {
-    const product = order?.productId;
-
-    if (!product || !product._id) {
-      showAlert({
-        title: "Unavailable",
-        message: "Product details are not available for this order",
-        type: "warning",
-      });
-      return;
-    }
-
-    navigation.navigate("ProductScreen", { product });
-  };
-
-  const renderOrder = ({ item }) => {
-    const normalizedStatus = normalizeOrderStatus(item.status);
-    const currentStageIndex = getCurrentStageIndex(item.status);
+    const styleMeta = STATUS_STYLES[stage] || STATUS_STYLES.pending;
+    const active = !isRejected && doneIndex >= index;
 
     return (
-      <TouchableOpacity style={styles.orderCard}>
-        <View style={styles.rowTop}>
-          <Image
-            source={{
-              uri:
-                item.productId?.images?.[0] ||
-                item.productId?.image ||
-                "https://via.placeholder.com/100",
-            }}
-            style={styles.productThumb}
-          />
-          <View style={styles.productMeta}>
-            <Text style={styles.productName} numberOfLines={1}>
-              {item.productId?.name || "Product"}
-            </Text>
-            <Text style={styles.productPrice}>
-              ₹
-              {Number(
-                item.totalPrice || item.totalAmount || 0,
-              ).toLocaleString()}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.rowMiddle}>
+      <View key={`${order?._id}-${stage}`} style={styles.stageRow}>
+        <View style={styles.stageLeft}>
           <View
             style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(normalizedStatus) },
+              styles.stageDot,
+              { borderColor: styleMeta.color },
+              active && { backgroundColor: styleMeta.color },
             ]}
           >
             <Ionicons
-              name={getStatusIcon(normalizedStatus)}
-              size={16}
-              color={colors.white}
+              name={styleMeta.icon}
+              size={12}
+              color={active ? colors.white : styleMeta.color}
             />
-            <Text style={styles.statusBadgeText}>{normalizedStatus}</Text>
           </View>
-          <Text style={styles.orderDate}>
-            {new Date(item.createdAt).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            })}
+          {index !== STAGES.length - 1 ? (
+            <View style={styles.stageLine} />
+          ) : null}
+        </View>
+
+        <View style={styles.stageContent}>
+          <Text
+            style={[styles.stageLabel, active && { color: colors.textPrimary }]}
+          >
+            {stage.charAt(0).toUpperCase() + stage.slice(1)}
+          </Text>
+          <Text style={styles.stageTime}>
+            {active
+              ? formatDate(order?.updatedAt || order?.createdAt)
+              : "Pending"}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderOrder = ({ item }) => {
+    const status = normalizeStatus(item?.status);
+    const statusMeta = STATUS_STYLES[status] || STATUS_STYLES.pending;
+
+    return (
+      <TouchableOpacity style={styles.card} activeOpacity={0.94}>
+        <View style={styles.cardTop}>
+          <Text style={styles.orderName} numberOfLines={1}>
+            {item?.productId?.name || "Order"}
+          </Text>
+          <Text
+            style={[
+              styles.statusPill,
+              {
+                backgroundColor: `${statusMeta.color}22`,
+                color: statusMeta.color,
+              },
+            ]}
+          >
+            {status}
           </Text>
         </View>
 
-        <View style={styles.timelineWrap}>
-          {ORDER_STAGES.map((stage, index) => {
-            const completed =
-              normalizedStatus !== "Rejected" &&
-              currentStageIndex >= 0 &&
-              index <= currentStageIndex;
+        <Text style={styles.orderPrice}>
+          Rs{" "}
+          {Number(item?.totalPrice || item?.totalAmount || 0).toLocaleString()}
+        </Text>
 
-            return (
-              <View key={`${item._id}-${stage}`} style={styles.timelineStep}>
-                <View
-                  style={[
-                    styles.timelineDot,
-                    completed && styles.timelineDotActive,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.timelineLabel,
-                    completed && styles.timelineLabelActive,
-                  ]}
-                >
-                  {stage}
+        <View style={styles.timelineWrap}>
+          {status === "rejected" ? (
+            <View style={styles.stageRow}>
+              <View style={styles.stageDotRejected}>
+                <Ionicons name="close" size={12} color={colors.white} />
+              </View>
+              <View style={styles.stageContent}>
+                <Text style={[styles.stageLabel, { color: colors.error }]}>
+                  Rejected
+                </Text>
+                <Text style={styles.stageTime}>
+                  {formatDate(item?.updatedAt || item?.createdAt)}
                 </Text>
               </View>
-            );
-          })}
+            </View>
+          ) : (
+            STAGES.map((stage, idx) => renderStage(item, stage, idx))
+          )}
         </View>
 
-        {normalizedStatus === "Shipped" ? (
-          <View style={styles.trackingInfoWrap}>
-            <Text style={styles.trackingInfoText}>
-              Courier: {item.courierName || "N/A"}
-            </Text>
-            <Text style={styles.trackingInfoText}>
-              Tracking ID: {item.trackingId || "N/A"}
-            </Text>
-            <TouchableOpacity
-              style={styles.trackBtn}
-              onPress={() => openTrackingUrl(item.trackingUrl)}
-            >
-              <Text style={styles.trackBtnText}>Track Package</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        <View style={styles.rowActions}>
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => handleViewDetails(item)}
-          >
-            <Text style={styles.secondaryBtnText}>View Details</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.detailsBtn}
+          onPress={() => {
+            if (item?.productId)
+              navigation.navigate("ProductScreen", { product: item.productId });
+          }}
+        >
+          <Text style={styles.detailsBtnText}>View product</Text>
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
-  const FilterChip = ({ label, value, selected }) => (
-    <TouchableOpacity
-      style={[styles.filterChip, selected && styles.filterChipActive]}
-      onPress={() => setSelectedFilter(value)}
-    >
-      <Text
-        style={[styles.filterChipText, selected && styles.filterChipTextActive]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-
-  const filteredOrders = orders.filter((order) => {
-    if (selectedFilter === "all") return true;
-    return (
-      normalizeOrderStatus(order.status).toLowerCase() ===
-      selectedFilter.toLowerCase()
-    );
-  });
+  const filters = [
+    "all",
+    "pending",
+    "accepted",
+    "shipped",
+    "delivered",
+    "rejected",
+  ];
 
   return (
     <ScreenSurface style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.topContainer}>
-          {/* Header */}
-          <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={24}
-                color={colors.textPrimary}
-              />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>My Orders</Text>
-            <View style={styles.headerSpacer} />
-          </View>
-
-          {/* Filters */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <Text style={styles.headerTitle}>Order Tracking</Text>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={styles.filterContainer}
-            contentContainerStyle={styles.filterContent}
-            data={[
-              { label: "All", value: "all" },
-              { label: "Pending", value: "pending" },
-              { label: "Accepted", value: "accepted" },
-              { label: "Packed", value: "packed" },
-              { label: "Shipped", value: "shipped" },
-              { label: "Delivered", value: "delivered" },
-              { label: "Rejected", value: "rejected" },
-            ]}
-            keyExtractor={(item) => item.value}
+            data={filters}
+            keyExtractor={(item) => item}
+            contentContainerStyle={{ paddingTop: 10 }}
             renderItem={({ item }) => (
-              <FilterChip
-                label={item.label}
-                value={item.value}
-                selected={selectedFilter === item.value}
-              />
+              <TouchableOpacity
+                onPress={() => setSelectedFilter(item)}
+                style={[
+                  styles.filterChip,
+                  selectedFilter === item && styles.filterChipActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedFilter === item && styles.filterChipTextActive,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
             )}
           />
         </View>
 
-        {/* Orders List */}
-        <View style={styles.contentArea}>
-          {loading ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-          ) : filteredOrders.length > 0 ? (
-            <FlatList
-              data={filteredOrders}
-              renderItem={renderOrder}
-              keyExtractor={(item) => item._id}
-              contentContainerStyle={[
-                styles.listContainer,
-                { paddingBottom: 80 + insets.bottom },
-              ]}
-              showsVerticalScrollIndicator={false}
-            />
-          ) : (
-            <View style={styles.emptyCenterContainer}>
-              <Ionicons
-                name="bag-outline"
-                size={50}
-                color={colors.textSecondary}
-                style={styles.emptyIcon}
+        {loading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : filteredOrders.length === 0 ? (
+          <View style={styles.centered}>
+            <Text style={styles.emptyArt}>:-)</Text>
+            <Text style={styles.emptyTitle}>No orders found</Text>
+            <TouchableOpacity
+              style={styles.shopBtn}
+              onPress={() => navigation.navigate("Home")}
+            >
+              <Text style={styles.shopBtnText}>Start shopping</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredOrders}
+            renderItem={renderOrder}
+            keyExtractor={(item) => item._id}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => fetchOrders(true)}
+                tintColor={colors.primary}
               />
-              <Text style={styles.emptyTitle}>No orders found</Text>
-              <Text style={styles.emptyText}>
-                You don't have any{" "}
-                {selectedFilter !== "all" ? selectedFilter : ""} orders yet
-              </Text>
-              <TouchableOpacity
-                style={styles.startShoppingBtn}
-                onPress={() => navigation.navigate("Home")}
-              >
-                <Text style={styles.startShoppingText}>Start Shopping</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+            }
+            contentContainerStyle={{
+              padding: 16,
+              paddingBottom: 84 + insets.bottom,
+            }}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
     </ScreenSurface>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  topContainer: {
-    backgroundColor: "#F9FAFB",
-  },
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 6,
     paddingHorizontal: 16,
-    paddingBottom: 8,
-    backgroundColor: "#F9FAFB",
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-    minHeight: 54,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  backBtn: {
-    width: 28,
-    alignItems: "flex-start",
-  },
-  headerSpacer: {
-    width: 28,
-  },
-  headerTitle: {
-    fontSize: 21,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  filterContainer: {
-    backgroundColor: "#F9FAFB",
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  filterContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 0,
-  },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: colors.textPrimary },
   filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 8,
-    alignSelf: "flex-start",
+    backgroundColor: colors.white,
   },
   filterChipActive: {
-    backgroundColor: "#007AFF",
+    borderColor: colors.primary,
+    backgroundColor: colors.lightBackground,
   },
   filterChipText: {
+    color: colors.textSecondary,
     fontSize: 12,
-    fontWeight: "600",
-    color: "#6B7280",
+    fontWeight: "700",
   },
-  filterChipTextActive: {
-    color: "#FFFFFF",
-  },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 2,
-    paddingBottom: 32,
-  },
-  contentArea: {
-    flex: 1,
-  },
-  orderCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  rowTop: {
-    flexDirection: "row",
-    alignItems: "center",
+  filterChipTextActive: { color: colors.primary },
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 12,
     marginBottom: 12,
   },
-  productThumb: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-    marginRight: 12,
-  },
-  productMeta: {
-    flex: 1,
-  },
-  statusBadge: {
+  cardTop: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+  },
+  orderName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    marginRight: 8,
+  },
+  statusPill: {
+    borderRadius: 999,
+    overflow: "hidden",
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.white,
+    fontSize: 11,
+    fontWeight: "800",
     textTransform: "capitalize",
   },
-  productName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 4,
+  orderPrice: { marginTop: 7, color: colors.primary, fontWeight: "800" },
+  timelineWrap: { marginTop: 10, paddingTop: 4 },
+  stageRow: { flexDirection: "row", minHeight: 38 },
+  stageLeft: { width: 22, alignItems: "center" },
+  stageDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.white,
   },
-  productPrice: {
+  stageDotRejected: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.error,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  stageLine: { width: 2, flex: 1, backgroundColor: "#E3E8EF", marginTop: 2 },
+  stageContent: { flex: 1, paddingLeft: 8, paddingBottom: 6 },
+  stageLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    textTransform: "capitalize",
+  },
+  stageTime: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  detailsBtn: {
+    marginTop: 6,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailsBtnText: { color: colors.primary, fontWeight: "700" },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  emptyArt: { fontSize: 42 },
+  emptyTitle: {
+    marginTop: 8,
     fontSize: 16,
     fontWeight: "700",
-    color: "#007AFF",
+    color: colors.textPrimary,
   },
-  rowMiddle: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  orderDate: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginLeft: 12,
-  },
-  rowActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 10,
-  },
-  trackBtn: {
-    backgroundColor: "#EFF6FF",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    alignSelf: "flex-start",
-    marginTop: 8,
-  },
-  trackBtnText: {
-    color: "#007AFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-  },
-  secondaryBtnText: {
-    color: "#374151",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  timelineWrap: {
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-    marginTop: 4,
-    paddingTop: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  timelineStep: {
-    alignItems: "center",
-    flex: 1,
-  },
-  timelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#D1D5DB",
-    marginBottom: 4,
-  },
-  timelineDotActive: {
-    backgroundColor: "#2563EB",
-  },
-  timelineLabel: {
-    fontSize: 10,
-    color: "#9CA3AF",
-    textAlign: "center",
-  },
-  timelineLabelActive: {
-    color: "#1D4ED8",
-    fontWeight: "700",
-  },
-  trackingInfoWrap: {
-    marginTop: 10,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: "#F8FAFC",
-  },
-  trackingInfoText: {
-    fontSize: 12,
-    color: "#334155",
-    marginBottom: 4,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 32,
-    width: "100%",
-  },
-  emptyCenterContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    width: "100%",
-    transform: [{ translateY: -30 }],
-  },
-  emptyIcon: {
-    opacity: 0.3,
-  },
-  emptyTitle: {
+  shopBtn: {
     marginTop: 12,
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
+    minHeight: 48,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  emptyText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-  },
-  startShoppingBtn: {
-    marginTop: 14,
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  startShoppingText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  shopBtnText: { color: colors.white, fontWeight: "800" },
 });
 
 export default OrderTrackingScreen;

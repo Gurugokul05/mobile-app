@@ -10,7 +10,6 @@ import {
   TextInput,
   ActivityIndicator,
   FlatList,
-  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../theme/colors";
@@ -167,23 +166,15 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleDeleteAccount = async () => {
-    Alert.alert(
-      "Delete Account",
-      "This action is permanent. We will send an OTP to your email to confirm deletion.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          style: "destructive",
-          onPress: async () => {
-            setDeleteOtp("");
-            setDeleteOtpRetryIn(0);
-            setDeleteOtpModalVisible(true);
-            await sendDeleteOtp();
-          },
-        },
-      ],
-    );
+    setDeleteOtp("");
+    setDeleteOtpRetryIn(0);
+    setDeleteOtpModalVisible(true);
+    showAlert({
+      title: "Delete Account",
+      message: "A confirmation OTP will be sent to your email.",
+      type: "warning",
+    });
+    await sendDeleteOtp();
   };
 
   const handleUpdateProfile = async () => {
@@ -216,17 +207,8 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleLogout = async () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", onPress: () => {} },
-      {
-        text: "Log Out",
-        onPress: async () => {
-          await logout();
-          navigation.reset({ index: 0, routes: [{ name: "Login" }] });
-        },
-        style: "destructive",
-      },
-    ]);
+    await logout();
+    navigation.reset({ index: 0, routes: [{ name: "Login" }] });
   };
 
   const OrderItem = ({ order }) => (

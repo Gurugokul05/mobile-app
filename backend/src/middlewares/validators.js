@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { isValidUpiId, normalizeUpiId } = require("../utils/upi");
 
 const isPlainObject = (value) =>
   Boolean(value) && Object.prototype.toString.call(value) === "[object Object]";
@@ -155,6 +156,7 @@ const validateProfileUpdateRequest = (req, res, next) => {
     "responseTime",
     "returnRate",
     "avatar",
+    "upiId",
   ];
 
   for (const field of stringFields) {
@@ -203,6 +205,17 @@ const validateProfileUpdateRequest = (req, res, next) => {
     !/^https?:\/\//i.test(sanitized.avatar)
   ) {
     return fail(res, "avatar must be a valid URL");
+  }
+
+  if (body.upiId !== undefined) {
+    if (!sanitized.upiId) {
+      return fail(res, "upiId cannot be empty");
+    }
+    const normalizedUpiId = normalizeUpiId(sanitized.upiId);
+    if (!isValidUpiId(normalizedUpiId)) {
+      return fail(res, "upiId must be in valid format (example: name@bank)");
+    }
+    sanitized.upiId = normalizedUpiId;
   }
 
   if (body.specialties !== undefined) {
@@ -494,6 +507,46 @@ const validatePaymentVerificationRequest = (req, res, next) => {
   return next();
 };
 
+const validateUpiPaymentSubmissionRequest = (req, res, next) => {
+  const claimedTransactionId = trimmedString(req.body?.claimedTransactionId);
+
+  if (!claimedTransactionId) {
+    return fail(res, "claimedTransactionId is required");
+  }
+
+  if (claimedTransactionId.length > 100) {
+    return fail(res, "claimedTransactionId must be 100 characters or less");
+  }
+
+  req.body = {
+    ...req.body,
+    claimedTransactionId,
+  };
+
+  return next();
+};
+
+const validateUpiPaymentDecisionRequest = (req, res, next) => {
+  const decision = trimmedString(req.body?.decision).toLowerCase();
+  const verificationNote = trimmedString(req.body?.verificationNote);
+
+  if (!["approve", "reject"].includes(decision)) {
+    return fail(res, "decision must be approve or reject");
+  }
+
+  if (verificationNote.length > 500) {
+    return fail(res, "verificationNote must be 500 characters or less");
+  }
+
+  req.body = {
+    ...req.body,
+    decision,
+    verificationNote,
+  };
+
+  return next();
+};
+
 const validateRefundCreateRequest = (req, res, next) => {
   const orderId = trimmedString(req.body?.orderId);
   const reason = trimmedString(req.body?.reason);
@@ -634,6 +687,8 @@ module.exports = {
   validateReviewRequest,
   validateOrderCreateRequest,
   validatePaymentVerificationRequest,
+  validateUpiPaymentSubmissionRequest,
+  validateUpiPaymentDecisionRequest,
   validateRefundCreateRequest,
   validateRefundDecisionRequest,
   validateSellerRefundResponseRequest,

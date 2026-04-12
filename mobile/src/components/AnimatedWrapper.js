@@ -1,8 +1,9 @@
 import React from "react";
 import { Animated, TouchableWithoutFeedback } from "react-native";
 import { useRef } from "react";
+import { hapticPress } from "../utils/haptics";
 
-const AnimatedWrapper = ({ children, onPress, style, scaleTo = 0.95 }) => {
+const AnimatedWrapper = ({ children, onPress, style, scaleTo = 0.97 }) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -27,7 +28,10 @@ const AnimatedWrapper = ({ children, onPress, style, scaleTo = 0.95 }) => {
     <TouchableWithoutFeedback
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      onPress={onPress}
+      onPress={() => {
+        hapticPress();
+        if (typeof onPress === "function") onPress();
+      }}
     >
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         {children}

@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenSurface from "../../components/ScreenSurface";
 import { useAuth } from "../../context/AuthContext";
+import { useAppAlert } from "../../context/AlertContext";
 import api from "../../api/config";
 
 const VALID_SECTIONS = ["password", "twoFactor", "activity"];
@@ -21,6 +21,7 @@ const VALID_SECTIONS = ["password", "twoFactor", "activity"];
 const SellerSecurityScreen = ({ route }) => {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
+  const { showAlert } = useAppAlert();
   const [loading, setLoading] = useState(true);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -62,10 +63,12 @@ const SellerSecurityScreen = ({ route }) => {
         twoFactorEnabled: Boolean(data?.twoFactorEnabled),
       }));
     } catch (error) {
-      Alert.alert(
-        "Update Failed",
-        error?.response?.data?.message || "Could not update 2FA setting.",
-      );
+      showAlert({
+        title: "Update Failed",
+        message:
+          error?.response?.data?.message || "Could not update 2FA setting.",
+        type: "error",
+      });
     } finally {
       setUpdating2fa(false);
     }
@@ -75,10 +78,11 @@ const SellerSecurityScreen = ({ route }) => {
     const email = user?.email;
 
     if (!email) {
-      Alert.alert(
-        "Missing Email",
-        "No account email is available for this user.",
-      );
+      showAlert({
+        title: "Missing Email",
+        message: "No account email is available for this user.",
+        type: "error",
+      });
       return;
     }
 
@@ -87,15 +91,18 @@ const SellerSecurityScreen = ({ route }) => {
       const { data } = await api.post("/auth/forgot-password/send-otp", {
         email,
       });
-      Alert.alert(
-        "OTP Sent",
-        data?.message || "A reset OTP was sent to your email.",
-      );
+      showAlert({
+        title: "OTP Sent",
+        message: data?.message || "A reset OTP was sent to your email.",
+        type: "success",
+      });
     } catch (error) {
-      Alert.alert(
-        "OTP Failed",
-        error?.response?.data?.message || "Could not send OTP right now.",
-      );
+      showAlert({
+        title: "OTP Failed",
+        message:
+          error?.response?.data?.message || "Could not send OTP right now.",
+        type: "error",
+      });
     } finally {
       setSendingOtp(false);
     }
@@ -105,20 +112,29 @@ const SellerSecurityScreen = ({ route }) => {
     const email = user?.email;
 
     if (!email) {
-      Alert.alert(
-        "Missing Email",
-        "No account email is available for this user.",
-      );
+      showAlert({
+        title: "Missing Email",
+        message: "No account email is available for this user.",
+        type: "error",
+      });
       return;
     }
 
     if (!otp.trim()) {
-      Alert.alert("OTP Required", "Enter the OTP sent to your email.");
+      showAlert({
+        title: "OTP Required",
+        message: "Enter the OTP sent to your email.",
+        type: "warning",
+      });
       return;
     }
 
     if (newPassword.trim().length < 8) {
-      Alert.alert("Weak Password", "Password must be at least 8 characters.");
+      showAlert({
+        title: "Weak Password",
+        message: "Password must be at least 8 characters.",
+        type: "warning",
+      });
       return;
     }
 
@@ -136,15 +152,17 @@ const SellerSecurityScreen = ({ route }) => {
         await updateUser({ updatedAt: new Date().toISOString() });
       }
 
-      Alert.alert(
-        "Password Updated",
-        data?.message || "Your password was reset successfully.",
-      );
+      showAlert({
+        title: "Password Updated",
+        message: data?.message || "Your password was reset successfully.",
+        type: "success",
+      });
     } catch (error) {
-      Alert.alert(
-        "Reset Failed",
-        error?.response?.data?.message || "Could not reset password.",
-      );
+      showAlert({
+        title: "Reset Failed",
+        message: error?.response?.data?.message || "Could not reset password.",
+        type: "error",
+      });
     } finally {
       setResetting(false);
     }
@@ -159,6 +177,9 @@ const SellerSecurityScreen = ({ route }) => {
   const updatedAtLabel = securityInfo?.updatedAt
     ? new Date(securityInfo.updatedAt).toLocaleString("en-IN")
     : "Not available";
+  const recentActivity = Array.isArray(securityInfo?.loginActivity)
+    ? securityInfo.loginActivity.slice(0, 5)
+    : [];
 
   return (
     <ScreenSurface style={styles.container}>
@@ -306,19 +327,24 @@ const SellerSecurityScreen = ({ route }) => {
                       <Text style={styles.itemSubtitle}>
                         Last profile update: {updatedAtLabel}
                       </Text>
-                      {(securityInfo?.loginActivity || [])
-                        .slice(0, 2)
-                        .map((entry, idx) => (
+                      {recentActivity.length ? (
+                        recentActivity.map((entry, idx) => (
                           <Text
                             key={`${entry?.timestamp || idx}`}
                             style={styles.itemSubtitle}
                           >
                             {new Date(
                               entry?.timestamp || Date.now(),
-                            ).toLocaleString("en-IN")}{" "}
-                            � {entry?.ip || "unknown IP"}
+                            ).toLocaleString("en-IN")}
+                            {" - "}
+                            {entry?.ip || "unknown IP"}
                           </Text>
-                        ))}
+                        ))
+                      ) : (
+                        <Text style={styles.itemSubtitle}>
+                          No recent login activity available.
+                        </Text>
+                      )}
                     </View>
                   </View>
                 </View>

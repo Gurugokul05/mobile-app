@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -28,6 +28,8 @@ const getMediaTypeForField = (fieldName) => {
 const SellerOnboardingScreen = ({ navigation }) => {
   const { showAlert } = useAppAlert();
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState(null);
   const [docs, setDocs] = useState({
     idProof: null,
     locationProof: null,
@@ -35,7 +37,41 @@ const SellerOnboardingScreen = ({ navigation }) => {
   });
   const insets = useSafeAreaInsets();
 
+  const isSubmissionLocked = useMemo(() => {
+    const status = String(verificationStatus?.status || "")
+      .trim()
+      .toLowerCase();
+    return status === "pending" || status === "approved";
+  }, [verificationStatus]);
+
+  const fetchVerificationStatus = async () => {
+    try {
+      setStatusLoading(true);
+      const { data } = await api.get("/seller/me/verification-status");
+      setVerificationStatus(data || null);
+    } catch (_error) {
+      setVerificationStatus(null);
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVerificationStatus();
+  }, []);
+
   const pickDoc = async (fieldName) => {
+    if (isSubmissionLocked) {
+      showAlert({
+        title: "Submission Locked",
+        message:
+          verificationStatus?.message ||
+          "Your documents are already submitted. Please wait for the review result before uploading again.",
+        type: "warning",
+      });
+      return;
+    }
+
     try {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -87,6 +123,17 @@ const SellerOnboardingScreen = ({ navigation }) => {
     let hardTimeoutId;
 
     if (loading) {
+      return;
+    }
+
+    if (isSubmissionLocked) {
+      showAlert({
+        title: "Already Submitted",
+        message:
+          verificationStatus?.message ||
+          "Your verification is already in progress. Please wait for approval or rejection.",
+        type: "warning",
+      });
       return;
     }
 
@@ -179,9 +226,13 @@ const SellerOnboardingScreen = ({ navigation }) => {
 
       showAlert({
         title: "Submitted",
-        message: "Verification documents submitted successfully.",
+        message:
+          "Documents received. Our team is reviewing them now. We will notify you once a decision is made.",
         type: "success",
-        onConfirm: () => navigation.goBack(),
+        onConfirm: () => {
+          fetchVerificationStatus();
+          navigation.goBack();
+        },
       });
     } catch (error) {
       const isHardTimeout = error?.message === "UPLOAD_HARD_TIMEOUT";
@@ -222,6 +273,35 @@ const SellerOnboardingScreen = ({ navigation }) => {
   return (
     <ScreenSurface style={styles.container}>
       <ScreenHeader title="Verification" navigation={navigation} />
+      {statusLoading ? (
+        <View style={[styles.statusCard, styles.statusCardNeutral]}>
+          <Text style={styles.statusTitle}>
+            Checking verification status...
+          </Text>
+        </View>
+      ) : verificationStatus ? (
+        <View
+          style={[
+            styles.statusCard,
+            verificationStatus.status === "approved"
+              ? styles.statusCardApproved
+              : verificationStatus.status === "rejected"
+                ? styles.statusCardRejected
+                : verificationStatus.status === "pending"
+                  ? styles.statusCardPending
+                  : styles.statusCardNeutral,
+          ]}
+        >
+          <Text style={styles.statusTitle}>{verificationStatus.label}</Text>
+          <Text style={styles.statusMessage}>{verificationStatus.message}</Text>
+          {verificationStatus.rejectionReason ? (
+            <Text style={styles.statusReason}>
+              Last rejection note: {verificationStatus.rejectionReason}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <Text style={styles.description}>
         Upload your ID proof, location proof, and a video showing the making of
         your authentic products.
@@ -232,9 +312,15 @@ const SellerOnboardingScreen = ({ navigation }) => {
       <DocTile title="Upload Making Proof (Video)" field="makingProof" />
 
       <Button
-        title={loading ? "Submitting..." : "Submit for Approval"}
+        title={
+          loading
+            ? "Submitting..."
+            : isSubmissionLocked
+              ? "Waiting for Review"
+              : "Submit for Approval"
+        }
         onPress={submitDocs}
-        disabled={loading}
+        disabled={loading || statusLoading || isSubmissionLocked}
         style={{ marginTop: 24, marginBottom: 24 + insets.bottom }}
       />
     </ScreenSurface>
@@ -251,8 +337,47 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 16,
     color: colors.textSecondary,
-    marginBottom: 32,
+    marginBottom: 18,
     lineHeight: 24,
+  },
+  statusCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+  },
+  statusCardNeutral: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#CBD5E1",
+  },
+  statusCardPending: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#FCD34D",
+  },
+  statusCardApproved: {
+    backgroundColor: "#DCFCE7",
+    borderColor: "#4ADE80",
+  },
+  statusCardRejected: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+  },
+  statusTitle: {
+    color: colors.textPrimary,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  statusMessage: {
+    marginTop: 6,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  statusReason: {
+    marginTop: 8,
+    color: colors.error,
+    fontSize: 12,
+    fontWeight: "600",
   },
   docTile: {
     backgroundColor: colors.white,

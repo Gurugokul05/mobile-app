@@ -17,6 +17,7 @@ const {
   updateMyStoreSettings,
   getMySellerCompliance,
   uploadMySellerComplianceDocs,
+  getMySellerVerificationStatus,
   getMySellerTransactions,
   getMySellerSecurity,
   updateMySellerTwoFactor,
@@ -58,6 +59,12 @@ router.get("/me/stats", protect, seller, getMySellerStats);
 router.get("/me/products", protect, seller, getMySellerProducts);
 router.get("/me/orders", protect, seller, getMySellerOrders);
 router.get("/me/revenue", protect, seller, getMySellerRevenue);
+router.get(
+  "/me/verification-status",
+  protect,
+  seller,
+  getMySellerVerificationStatus,
+);
 router.get("/me/store-settings", protect, seller, getMyStoreSettings);
 router.put("/me/store-settings", protect, seller, updateMyStoreSettings);
 router.get("/me/compliance", protect, seller, getMySellerCompliance);

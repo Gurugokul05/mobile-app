@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   TextInput,
   ScrollView,
+  Linking,
+  Image,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -77,6 +79,24 @@ const normalizeOrderStatus = (status) => {
   if (status === "Ordered") return "Pending";
   if (status === "Cancelled") return "Rejected";
   return status || "Pending";
+};
+
+const resolveMediaUrl = (url) => {
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(rawUrl)) {
+    return rawUrl;
+  }
+
+  const baseUrl = String(api.defaults.baseURL || "").replace(/\/api\/?$/, "");
+  if (!baseUrl) {
+    return rawUrl;
+  }
+
+  return `${baseUrl}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
 };
 
 const SellerOrderDetailScreen = ({ route, navigation }) => {
@@ -230,6 +250,10 @@ const SellerOrderDetailScreen = ({ route, navigation }) => {
 
   const status = normalizeOrderStatus(order?.status);
   const shippingAddress = order?.shippingAddress || {};
+  const paymentStatus = order?.paymentDetails?.status || "Pending";
+  const paymentProofUrl = resolveMediaUrl(
+    order?.paymentDetails?.proof?.screenshotUrl,
+  );
 
   if (loading) {
     return (
@@ -288,7 +312,93 @@ const SellerOrderDetailScreen = ({ route, navigation }) => {
               .join(", ") || "N/A"}
           </Text>
           <Text style={styles.statusText}>Status: {status}</Text>
+          <Text style={styles.statusText}>Payment: {paymentStatus}</Text>
         </View>
+
+        {paymentStatus === "Payment Submitted" ? (
+          <View style={styles.actionCard}>
+            <Text style={styles.sectionTitle}>Payment Verification</Text>
+            <Text style={styles.helpText}>
+              Verify buyer-submitted UPI payment screenshot before processing.
+            </Text>
+
+            {paymentProofUrl ? (
+              <TouchableOpacity
+                style={styles.secondaryOutlineButton}
+                onPress={() => Linking.openURL(paymentProofUrl)}
+              >
+                <Text style={styles.secondaryOutlineButtonText}>
+                  Open Payment Screenshot
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <Text style={styles.meta}>
+              Claimed Txn ID:{" "}
+              {order?.paymentDetails?.proof?.claimedTransactionId || "N/A"}
+            </Text>
+
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={styles.acceptButton}
+                onPress={() =>
+                  runOrderAction("payment-verification", {
+                    decision: "approve",
+                    verificationNote: "Seller verified payment screenshot",
+                  })
+                }
+                disabled={Boolean(actionLoading)}
+              >
+                {actionLoading === "payment-verification" ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.actionText}>Approve Payment</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.rejectButton}
+                onPress={() =>
+                  runOrderAction("payment-verification", {
+                    decision: "reject",
+                    verificationNote: "Seller rejected payment proof",
+                  })
+                }
+                disabled={Boolean(actionLoading)}
+              >
+                {actionLoading === "payment-verification" ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.actionText}>Reject Payment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {paymentProofUrl ? (
+          <View style={styles.actionCard}>
+            <Text style={styles.sectionTitle}>Payment Proof</Text>
+            <Text style={styles.helpText}>
+              Buyer-submitted screenshot for manual verification.
+            </Text>
+            <Image
+              source={{ uri: paymentProofUrl }}
+              style={styles.proofImage}
+            />
+            <Text style={styles.meta}>
+              Claimed Txn ID:{" "}
+              {order?.paymentDetails?.proof?.claimedTransactionId || "N/A"}
+            </Text>
+            <TouchableOpacity
+              style={styles.secondaryOutlineButton}
+              onPress={() => Linking.openURL(paymentProofUrl)}
+            >
+              <Text style={styles.secondaryOutlineButtonText}>
+                Open Full Screenshot
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {status === "Pending" ? (
           <View style={styles.actionCard}>
@@ -518,6 +628,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  secondaryOutlineButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  secondaryOutlineButtonText: {
+    color: colors.primary,
+    fontWeight: "700",
+  },
   acceptButton: {
     flex: 1,
     backgroundColor: colors.success,
@@ -546,6 +670,13 @@ const styles = StyleSheet.create({
   helpText: {
     color: colors.textSecondary,
     fontSize: 12,
+    marginBottom: 10,
+  },
+  proofImage: {
+    width: "100%",
+    height: 240,
+    borderRadius: 12,
+    backgroundColor: "#E5E7EB",
     marginBottom: 10,
   },
   fileInfoWrap: {

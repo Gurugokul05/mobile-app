@@ -16,9 +16,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import ScreenSurface from "../../components/ScreenSurface";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppAlert } from "../../context/AlertContext";
 
 const SellerProfileScreen = ({ navigation }) => {
   const { user, logout, updateUser } = useAuth();
+  const { showAlert } = useAppAlert();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState(null);
@@ -31,6 +33,7 @@ const SellerProfileScreen = ({ navigation }) => {
     responseTime: "< 2 hours",
     workingHours: "09:00 AM - 06:00 PM",
     description: "",
+    upiId: "",
   });
   const [acceptingOrders, setAcceptingOrders] = useState(true);
   const [vacationMode, setVacationMode] = useState(false);
@@ -51,6 +54,7 @@ const SellerProfileScreen = ({ navigation }) => {
         responseTime: data?.responseTime || "< 2 hours",
         workingHours: data?.workingHours || "09:00 AM - 06:00 PM",
         description: data?.description || "",
+        upiId: data?.upiId || "",
       });
       setProfileSnapshot(data);
       setStats(statsRes?.data || null);
@@ -92,6 +96,17 @@ const SellerProfileScreen = ({ navigation }) => {
       nextErrors.description = "Short description is required";
     }
 
+    const normalizedUpiId = String(form.upiId || "")
+      .trim()
+      .toLowerCase();
+    if (!normalizedUpiId) {
+      nextErrors.upiId = "UPI ID is required";
+    } else if (
+      !/^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/.test(normalizedUpiId)
+    ) {
+      nextErrors.upiId = "UPI ID format is invalid (example: name@bank)";
+    }
+
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -113,6 +128,9 @@ const SellerProfileScreen = ({ navigation }) => {
       responseTime: String(form.responseTime || "").trim(),
       workingHours: String(form.workingHours || "").trim(),
       description: String(form.description || "").trim(),
+      upiId: String(form.upiId || "")
+        .trim()
+        .toLowerCase(),
       acceptingOrders,
       vacationMode,
     };
@@ -121,9 +139,17 @@ const SellerProfileScreen = ({ navigation }) => {
       setSaving(true);
       const { data } = await api.put("/auth/profile", payload);
       await updateUser(data);
-      alert("Profile updated successfully.");
+      showAlert({
+        title: "Profile Updated",
+        message: "Profile updated successfully.",
+        type: "success",
+      });
     } catch (error) {
-      alert(error?.response?.data?.message || "Failed to update profile");
+      showAlert({
+        title: "Update Failed",
+        message: error?.response?.data?.message || "Failed to update profile",
+        type: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -166,6 +192,7 @@ const SellerProfileScreen = ({ navigation }) => {
     String(form.address || "").trim(),
     String(form.responseTime || "").trim(),
     String(form.description || "").trim(),
+    String(form.upiId || "").trim(),
     user?.isVerified ? "ok" : "",
   ];
   const profileCompletion = Math.round(
@@ -415,7 +442,9 @@ const SellerProfileScreen = ({ navigation }) => {
           <SectionTitle title="Payout & Finance" />
           <View style={styles.financeRow}>
             <Text style={styles.financeLabel}>Bank / UPI Details</Text>
-            <Text style={styles.financeValue}>Configured</Text>
+            <Text style={styles.financeValue}>
+              {String(form.upiId || "").trim() ? "Configured" : "Missing"}
+            </Text>
           </View>
           <View style={styles.financeRow}>
             <Text style={styles.financeLabel}>Earnings Summary</Text>
@@ -616,6 +645,22 @@ const SellerProfileScreen = ({ navigation }) => {
               />
               {errors.address ? (
                 <Text style={styles.errorText}>{errors.address}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>UPI ID *</Text>
+              <TextInput
+                value={form.upiId}
+                onChangeText={(value) => setField("upiId", value)}
+                style={[styles.input, errors.upiId && styles.inputError]}
+                placeholder="name@bank"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {errors.upiId ? (
+                <Text style={styles.errorText}>{errors.upiId}</Text>
               ) : null}
             </View>
 
