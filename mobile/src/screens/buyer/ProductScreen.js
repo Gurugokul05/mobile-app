@@ -7,10 +7,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  FlatList,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import api from "../../api/config";
 import { colors } from "../../theme/colors";
 import { useCart } from "../../context/CartContext";
 import { useAppAlert } from "../../context/AlertContext";
@@ -25,6 +27,8 @@ const ProductScreen = ({ route, navigation }) => {
   const [activeTab, setActiveTab] = useState("Description");
   const [quantity, setQuantity] = useState(1);
   const [tabOpacity] = useState(new Animated.Value(1));
+  const [relatedProducts, setRelatedProducts] = useState([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
   const { addToCart } = useCart();
   const { showAlert } = useAppAlert();
   const { toggleWishlist, isInWishlist } = useWishlist();
@@ -33,6 +37,92 @@ const ProductScreen = ({ route, navigation }) => {
   const clampedTrust = Math.max(0, Math.min(100, trustScore));
   const trustWidth = `${clampedTrust}%`;
   const reviews = Array.isArray(product?.reviews) ? product.reviews : [];
+  const productImages = Array.isArray(product?.images)
+    ? product.images.filter(Boolean)
+    : [];
+  const heroImage = productImages[0] || "https://via.placeholder.com/600";
+
+  const productHighlights = useMemo(
+    () => [
+      {
+        icon: "location-outline",
+        label: "Origin",
+        value: product?.originPlace || "Local craft",
+      },
+      {
+        icon: "shield-checkmark-outline",
+        label: "Trust",
+        value: `${clampedTrust}% seller trust`,
+      },
+      {
+        icon: "pricetag-outline",
+        label: "Price",
+        value: `Rs ${Number(product?.price || 0).toLocaleString()}`,
+      },
+      {
+        icon: "star-outline",
+        label: "Reviews",
+        value: `${reviews.length || 0} customer review${reviews.length === 1 ? "" : "s"}`,
+      },
+    ],
+    [clampedTrust, product?.originPlace, product?.price, reviews.length],
+  );
+
+  const carePoints = useMemo(
+    () => [
+      "Verified seller profile and trust score",
+      "Secure checkout and buyer protection",
+      "Quality-checked product listing before sale",
+      "Trackable order with support for refund claims",
+    ],
+    [],
+  );
+
+  useEffect(() => {
+    const loadRelatedProducts = async () => {
+      try {
+        setRelatedLoading(true);
+        const { data } = await api.get("/products");
+        const allProducts = Array.isArray(data) ? data : [];
+        const currentId = String(product?._id || "");
+        const currentOrigin = String(product?.originPlace || "")
+          .trim()
+          .toLowerCase();
+        const currentSellerId = String(
+          product?.sellerId?._id || product?.sellerId || "",
+        );
+
+        const scored = allProducts
+          .filter((item) => String(item?._id || "") !== currentId)
+          .map((item) => {
+            const sameOrigin =
+              currentOrigin &&
+              String(item?.originPlace || "")
+                .trim()
+                .toLowerCase() === currentOrigin;
+            const sameSeller =
+              currentSellerId &&
+              String(item?.sellerId?._id || item?.sellerId || "") ===
+                currentSellerId;
+            const trust = Number(item?.sellerId?.trustScore || 0);
+            const score =
+              (sameOrigin ? 2 : 0) + (sameSeller ? 1 : 0) + trust / 100;
+
+            return { ...item, _score: score };
+          })
+          .sort((a, b) => b._score - a._score)
+          .slice(0, 8);
+
+        setRelatedProducts(scored);
+      } catch (_error) {
+        setRelatedProducts([]);
+      } finally {
+        setRelatedLoading(false);
+      }
+    };
+
+    loadRelatedProducts();
+  }, [product?._id, product?.originPlace, product?.sellerId]);
 
   const tabContent = useMemo(() => {
     if (activeTab === "Description") {
@@ -42,6 +132,15 @@ const ProductScreen = ({ route, navigation }) => {
             {product?.description ||
               "Handpicked and authentic regional product crafted by local sellers."}
           </Text>
+          <View style={styles.featureGrid}>
+            {productHighlights.map((item) => (
+              <View key={item.label} style={styles.featureCard}>
+                <Ionicons name={item.icon} size={16} color={colors.primary} />
+                <Text style={styles.featureLabel}>{item.label}</Text>
+                <Text style={styles.featureValue}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
           <View style={styles.bulletRow}>
             <Ionicons name="sparkles" size={14} color={colors.primary} />
             <Text style={styles.bulletText}>
@@ -112,6 +211,20 @@ const ProductScreen = ({ route, navigation }) => {
             Refund supported for eligible delivered orders
           </Text>
         </View>
+
+        <View style={styles.listCardSoft}>
+          <Text style={styles.sectionHeading}>Why shoppers like this</Text>
+          {carePoints.map((point) => (
+            <View key={point} style={styles.bulletRow}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={15}
+                color={colors.success}
+              />
+              <Text style={styles.bulletText}>{point}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }, [activeTab, product?.description, product?.originPlace, reviews]);
@@ -147,7 +260,7 @@ const ProductScreen = ({ route, navigation }) => {
         <View style={styles.heroWrap}>
           <Image
             source={{
-              uri: product?.images?.[0] || "https://via.placeholder.com/600",
+              uri: heroImage,
             }}
             style={styles.heroImage}
           />
@@ -204,6 +317,26 @@ const ProductScreen = ({ route, navigation }) => {
               Rs {Number(product?.price || 0).toLocaleString()}
             </Text>
 
+            <Text style={styles.shortDescription} numberOfLines={3}>
+              {product?.description ||
+                "A crafted ROOTS product with verified seller details, secure checkout, and buyer support."}
+            </Text>
+
+            {productImages.length > 1 ? (
+              <View style={styles.galleryWrap}>
+                <Text style={styles.sectionHeading}>More Photos</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {productImages.slice(0, 5).map((uri, index) => (
+                    <Image
+                      key={`${uri}-${index}`}
+                      source={{ uri }}
+                      style={styles.galleryThumb}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
             <View style={styles.sellerCard}>
               <View style={styles.sellerTop}>
                 <Text style={styles.sellerName}>
@@ -211,6 +344,11 @@ const ProductScreen = ({ route, navigation }) => {
                 </Text>
                 <Text style={styles.sellerTag}>{clampedTrust}% trust</Text>
               </View>
+              <Text style={styles.sellerMeta}>
+                {product?.sellerId?.location ||
+                  product?.originPlace ||
+                  "Verified local seller"}
+              </Text>
               <Text style={styles.sellerBarLabel}>Seller Trust Score</Text>
               <View style={styles.trustRail}>
                 <View style={[styles.trustFill, { width: trustWidth }]} />
@@ -242,6 +380,93 @@ const ProductScreen = ({ route, navigation }) => {
             <Animated.View style={[styles.tabPanel, { opacity: tabOpacity }]}>
               {tabContent}
             </Animated.View>
+
+            <View style={styles.sellerCard}>
+              <Text style={styles.sectionHeading}>Shipping & Returns</Text>
+              <View style={styles.bulletRow}>
+                <Ionicons
+                  name="time-outline"
+                  size={15}
+                  color={colors.primary}
+                />
+                <Text style={styles.bulletText}>
+                  Expected delivery in 3-7 business days
+                </Text>
+              </View>
+              <View style={styles.bulletRow}>
+                <Ionicons
+                  name="cube-outline"
+                  size={15}
+                  color={colors.primary}
+                />
+                <Text style={styles.bulletText}>
+                  Seller packs securely before shipping
+                </Text>
+              </View>
+              <View style={styles.bulletRow}>
+                <Ionicons
+                  name="return-up-back-outline"
+                  size={15}
+                  color={colors.primary}
+                />
+                <Text style={styles.bulletText}>
+                  Refunds can be requested for eligible delivered orders
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.relatedWrap}>
+              <View style={styles.relatedHeader}>
+                <Text style={styles.sectionHeading}>You May Like</Text>
+                {relatedLoading ? (
+                  <Text style={styles.relatedHint}>Loading...</Text>
+                ) : null}
+              </View>
+
+              {relatedProducts.length ? (
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={relatedProducts}
+                  keyExtractor={(item) => String(item?._id)}
+                  contentContainerStyle={styles.relatedList}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.relatedCard}
+                      onPress={() =>
+                        navigation.replace("ProductScreen", { product: item })
+                      }
+                    >
+                      <Image
+                        source={{
+                          uri:
+                            item?.images?.[0] ||
+                            "https://via.placeholder.com/300",
+                        }}
+                        style={styles.relatedImage}
+                      />
+                      <Text style={styles.relatedTitle} numberOfLines={2}>
+                        {item?.name || "Product"}
+                      </Text>
+                      <Text style={styles.relatedMeta} numberOfLines={1}>
+                        {item?.originPlace || "Local"}
+                      </Text>
+                      <Text style={styles.relatedPrice}>
+                        Rs {Number(item?.price || 0).toLocaleString()}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              ) : (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyArt}>:-)</Text>
+                  <Text style={styles.emptyTitle}>No related products yet</Text>
+                  <Text style={styles.bodyText}>
+                    More items from similar sellers will appear here.
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </ScrollView>
 
@@ -305,6 +530,28 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.primary,
   },
+  shortDescription: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.textSecondary,
+  },
+  galleryWrap: {
+    marginTop: 14,
+  },
+  sectionHeading: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: colors.textPrimary,
+    marginBottom: 10,
+  },
+  galleryThumb: {
+    width: 92,
+    height: 92,
+    borderRadius: 12,
+    marginRight: 10,
+    backgroundColor: colors.lightBackground,
+  },
   sellerCard: {
     marginTop: 14,
     borderRadius: 12,
@@ -320,6 +567,11 @@ const styles = StyleSheet.create({
   },
   sellerName: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
   sellerTag: { fontSize: 12, fontWeight: "700", color: colors.primary },
+  sellerMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
   sellerBarLabel: { marginTop: 8, fontSize: 12, color: colors.textSecondary },
   trustRail: {
     marginTop: 8,
@@ -356,8 +608,42 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   bodyText: { fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
+  featureGrid: {
+    marginTop: 12,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  featureCard: {
+    width: "48%",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 10,
+    marginBottom: 8,
+  },
+  featureLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  featureValue: {
+    marginTop: 2,
+    fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: "700",
+  },
   bulletRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
   bulletText: { marginLeft: 8, color: colors.textPrimary, fontSize: 13 },
+  listCardSoft: {
+    marginTop: 14,
+    borderRadius: 12,
+    backgroundColor: colors.lightBackground,
+    padding: 12,
+  },
   reviewCard: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -378,6 +664,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: colors.textPrimary,
+  },
+  relatedWrap: {
+    marginTop: 16,
+  },
+  relatedHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  relatedHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  relatedList: {
+    paddingRight: 8,
+  },
+  relatedCard: {
+    width: 152,
+    marginRight: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: 10,
+  },
+  relatedImage: {
+    width: "100%",
+    height: 110,
+    borderRadius: 12,
+    backgroundColor: colors.lightBackground,
+  },
+  relatedTitle: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.textPrimary,
+  },
+  relatedMeta: {
+    marginTop: 4,
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  relatedPrice: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.primary,
   },
   bottomBar: {
     position: "absolute",
