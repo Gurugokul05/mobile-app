@@ -13,6 +13,15 @@ const corsAllowList = String(process.env.CORS_ORIGIN || "")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const defaultCorsOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+const allowedCorsOrigins = Array.from(
+  new Set([...defaultCorsOrigins, ...corsAllowList]),
+);
 
 // Connect to MongoDB
 connectDB().catch((err) => {
@@ -50,7 +59,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (corsAllowList.includes(origin)) {
+      if (allowedCorsOrigins.includes(origin)) {
         return callback(null, true);
       }
 

@@ -175,7 +175,7 @@ Try logging in with `buyer1@email.com` / `password123`
 
 ```bash
 # Login to MongoDB
-mongosh "mongodb+srv://Gurugokul@cluster0.tywfoo2.mongodb.net/"
+mongosh "YOUR MONGO DB URL"
 
 # Check users
 db.users.find({ email: "buyer1@email.com" }).pretty()
