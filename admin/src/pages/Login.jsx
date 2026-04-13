@@ -63,7 +63,7 @@ const Login = ({ setToken }) => {
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? "Logging in..." : "Login"}
           </button>
-          <p className="auth-hint">Default admin: admin@roots.com / admin123</p>
+          <p className="auth-hint"></p>
         </form>
       </div>
     </div>
