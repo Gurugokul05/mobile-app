@@ -1,6 +1,5 @@
 require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const multer = require("multer");
@@ -9,19 +8,6 @@ const connectDB = require("./src/config/db");
 const seedDatabase = require("./seeds/seedData");
 
 const isProduction = process.env.NODE_ENV === "production";
-const corsAllowList = String(process.env.CORS_ORIGIN || "")
-  .split(",")
-  .map((item) => item.trim())
-  .filter(Boolean);
-const defaultCorsOrigins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-];
-const allowedCorsOrigins = Array.from(
-  new Set([...defaultCorsOrigins, ...corsAllowList]),
-);
 
 // Connect to MongoDB
 connectDB().catch((err) => {
@@ -46,30 +32,6 @@ app.set("trust proxy", 1);
 // Middlewares
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-// CORS Configuration
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (!isProduction) {
-        return callback(null, true);
-      }
-
-      if (allowedCorsOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Origin not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
 
 app.use(
   helmet({
